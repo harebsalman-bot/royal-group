@@ -174,9 +174,26 @@ export const ColorLab: React.FC = () => {
 
       setSubmitting(false);
       setSubmittedSuccess(true);
-    } catch (err) {
-      console.error(err);
-      setFormError('حدث خطأ أثناء إرسال طلبك. يرجى المحاولة مرة أخرى.');
+    } catch (err: any) {
+      console.error("Bedroom Submission Error:", err);
+      
+      let finalError = 'حدث خطأ أثناء إرسال طلبك. يرجى المحاولة مرة أخرى.';
+      if (err && err.message) {
+        try {
+          const parsed = JSON.parse(err.message);
+          if (parsed && parsed.error) {
+            finalError = `فشل الإرسال بقاعدة البيانات: ${parsed.error}`;
+          } else {
+            finalError = `فشل الإرسال: ${err.message}`;
+          }
+        } catch (e) {
+          finalError = `فشل الإرسال: ${err.message}`;
+        }
+      } else if (typeof err === 'string') {
+        finalError = `فشل الإرسال: ${err}`;
+      }
+
+      setFormError(finalError);
       setSubmitting(false);
     }
   };

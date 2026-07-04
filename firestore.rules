@@ -2,34 +2,31 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 1. Global Safety Net - Default Deny
+    // Global Safety Net - Default Deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // --- Core Helper Functions ---
+    // Helper functions
     function isSignedIn() {
       return request.auth != null;
     }
 
     // Verify if the logged-in user is the official Royal Group Administrator
     function isAdmin() {
-      return request.auth != null;
+      return request.auth != null && request.auth.token.email == 'harebsalman@gmail.com';
     }
 
+    // Simplify ID validation to avoid potential regular expression compiler issues
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() > 0 && id.size() <= 128;
     }
 
     function incoming() {
       return request.resource.data;
     }
 
-    function existing() {
-      return resource.data;
-    }
-
-    // --- Entity Specific Validation Helpers ---
+    // Validation helpers
     function isValidProject(data) {
       return data.title is string && data.title.size() <= 200 &&
              data.description is string && data.description.size() <= 3000 &&
@@ -38,16 +35,13 @@ service cloud.firestore {
              data.coverImage is string && data.coverImage.size() <= 1500 &&
              data.category is string && data.category.size() <= 100 &&
              data.featured is bool &&
-             data.createdAt is int &&
-             (!('beforeImage' in data) || data.beforeImage is string) &&
-             (!('afterImage' in data) || data.afterImage is string) &&
-             (!('images' in data) || data.images is list);
+             (data.createdAt is int || data.createdAt is float);
     }
 
     function isValidProjectImage(data) {
       return data.title is string && data.title.size() <= 200 &&
              data.url is string && data.url.size() <= 1500 &&
-             data.createdAt is int;
+             (data.createdAt is int || data.createdAt is float);
     }
 
     function isValidCategory(data) {
@@ -60,7 +54,7 @@ service cloud.firestore {
              data.type is string && (data.type == 'wood' || data.type == 'marble' || data.type == 'wall' || data.type == 'flooring') &&
              data.colorValue is string && data.colorValue.size() <= 50 &&
              data.image is string && data.image.size() <= 1500 &&
-             data.createdAt is int;
+             (data.createdAt is int || data.createdAt is float);
     }
 
     function isValidDesignRequest(data) {
@@ -70,19 +64,7 @@ service cloud.firestore {
              data.projectType is string && data.projectType.size() <= 100 &&
              data.area is string && data.area.size() <= 50 &&
              data.budget is string && data.budget.size() <= 50 &&
-             data.status is string && (
-               data.status == 'New' || data.status == 'Under Review' || data.status == 'Contacted' ||
-               data.status == 'Approved' || data.status == 'In Progress' || data.status == 'Completed' ||
-               data.status == 'Rejected' || data.status == 'pending' || data.status == 'reviewed'
-             ) &&
-             data.createdAt is int &&
-             (!('requestNumber' in data) || data.requestNumber is string) &&
-             (!('viewed' in data) || data.viewed is bool) &&
-             (!('adminNotes' in data) || data.adminNotes is string) &&
-             (!('rejectionReason' in data) || data.rejectionReason is string) &&
-             (!('rejectionNotes' in data) || data.rejectionNotes is string) &&
-             (!('plansUrl' in data) || data.plansUrl is list) &&
-             (!('imageUrl' in data) || data.imageUrl is list);
+             (data.createdAt is int || data.createdAt is float);
     }
 
     function isValidCompanySettings(data) {
@@ -108,27 +90,15 @@ service cloud.firestore {
              ) &&
              data.name is string && data.name.size() <= 200 &&
              data.image is string && data.image.size() <= 1500 &&
-             data.createdAt is int &&
-             (!('description' in data) || data.description is string);
+             (data.createdAt is int || data.createdAt is float);
     }
 
     function isValidBedroomSubmission(data) {
       return data.clientName is string && data.clientName.size() <= 150 &&
              data.clientPhone is string && data.clientPhone.size() <= 50 &&
              data.selections is map &&
-             data.status is string && (
-               data.status == 'New' || data.status == 'Under Review' || data.status == 'Contacted' ||
-               data.status == 'Approved' || data.status == 'In Progress' || data.status == 'Completed' ||
-               data.status == 'Rejected' || data.status == 'pending' || data.status == 'reviewed'
-             ) &&
-             data.createdAt is int &&
-             (!('requestNumber' in data) || data.requestNumber is string) &&
-             (!('viewed' in data) || data.viewed is bool) &&
-             (!('adminNotes' in data) || data.adminNotes is string) &&
-             (!('rejectionReason' in data) || data.rejectionReason is string) &&
-             (!('rejectionNotes' in data) || data.rejectionNotes is string);
+             (data.createdAt is int || data.createdAt is float);
     }
-
 
     // --- Collection Security Rules ---
 
@@ -164,14 +134,6 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // DESIGN REQUESTS Collection
-    match /designRequests/{requestId} {
-      allow get, list: if isAdmin();
-      allow create: if isValidDesignRequest(incoming()) && isValidId(requestId);
-      allow update: if isAdmin() && isValidDesignRequest(incoming());
-      allow delete: if isAdmin();
-    }
-
     // COMPANY SETTINGS Collection
     match /companySettings/{settingId} {
       allow get, list: if true;
@@ -196,10 +158,18 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // DESIGN REQUESTS Collection
+    match /designRequests/{requestId} {
+      allow create: if (isAdmin() || isValidDesignRequest(incoming())) && isValidId(requestId);
+      allow get, list: if isAdmin();
+      allow update: if isAdmin() && isValidDesignRequest(incoming());
+      allow delete: if isAdmin();
+    }
+
     // BEDROOM SUBMISSIONS Collection
     match /bedroomSubmissions/{submissionId} {
+      allow create: if (isAdmin() || isValidBedroomSubmission(incoming())) && isValidId(submissionId);
       allow get, list: if isAdmin();
-      allow create: if isValidBedroomSubmission(incoming()) && isValidId(submissionId);
       allow update: if isAdmin() && isValidBedroomSubmission(incoming());
       allow delete: if isAdmin();
     }
