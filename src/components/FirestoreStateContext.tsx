@@ -223,163 +223,215 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       const db = getDb();
 
       // 1. Subscribe and Seed Categories
-      const categoriesSnap = await getDocs(collection(db, 'categories'));
-      if (categoriesSnap.empty) {
-        for (const cat of mockCategories) {
-          await setDoc(doc(db, 'categories', cat.id), cat);
+      try {
+        const categoriesSnap = await getDocs(collection(db, 'categories'));
+        if (categoriesSnap.empty) {
+          for (const cat of mockCategories) {
+            await setDoc(doc(db, 'categories', cat.id), cat);
+          }
+          setCategories(mockCategories);
+        } else {
+          const catList: Category[] = [];
+          categoriesSnap.forEach(doc => catList.push(doc.data() as Category));
+          setCategories(catList);
         }
-        setCategories(mockCategories);
-      } else {
-        const catList: Category[] = [];
-        categoriesSnap.forEach(doc => catList.push(doc.data() as Category));
-        setCategories(catList);
+      } catch (e) {
+        console.error("Error syncing Categories:", e);
       }
 
       // 2. Check and Seed Projects
-      const projectsSnap = await getDocs(collection(db, 'projects'));
-      if (projectsSnap.empty) {
-        for (const proj of mockProjects) {
-          await setDoc(doc(db, 'projects', proj.id), proj);
+      try {
+        const projectsSnap = await getDocs(collection(db, 'projects'));
+        if (projectsSnap.empty) {
+          for (const proj of mockProjects) {
+            await setDoc(doc(db, 'projects', proj.id), proj);
+          }
         }
+      } catch (e) {
+        console.error("Error syncing Projects:", e);
       }
 
       // 3. Check and Seed Color Variants
-      const colorsSnap = await getDocs(collection(db, 'colorVariants'));
-      if (colorsSnap.empty) {
-        for (const col of mockColorVariants) {
-          await setDoc(doc(db, 'colorVariants', col.id), col);
+      try {
+        const colorsSnap = await getDocs(collection(db, 'colorVariants'));
+        if (colorsSnap.empty) {
+          for (const col of mockColorVariants) {
+            await setDoc(doc(db, 'colorVariants', col.id), col);
+          }
         }
+      } catch (e) {
+        console.error("Error syncing Color Variants:", e);
       }
 
       // 4. Check and Seed Project Images Collection
-      const projectImagesSnap = await getDocs(collection(db, 'projectImages'));
-      if (projectImagesSnap.empty) {
-        await setDoc(doc(db, 'projectImages', 'placeholder_init'), {
-          id: 'placeholder_init',
-          title: 'Royal Group Default Concept',
-          url: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
-          createdAt: Date.now()
-        });
+      try {
+        const projectImagesSnap = await getDocs(collection(db, 'projectImages'));
+        if (projectImagesSnap.empty) {
+          await setDoc(doc(db, 'projectImages', 'placeholder_init'), {
+            id: 'placeholder_init',
+            title: 'Royal Group Default Concept',
+            url: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
+            createdAt: Date.now()
+          });
+        }
+      } catch (e) {
+        console.error("Error syncing Project Images:", e);
       }
 
       // 5. Check and Seed Design Requests Collection
-      const requestsSnap = await getDocs(collection(db, 'designRequests'));
-      if (requestsSnap.empty) {
-        await setDoc(doc(db, 'designRequests', 'placeholder_init'), {
-          id: 'placeholder_init',
-          name: 'بوابة رويال جروب',
-          phone: '+9647700000000',
-          city: 'بغداد',
-          projectType: 'residential',
-          area: '250',
-          budget: 'medium',
-          status: 'reviewed',
-          createdAt: Date.now()
-        });
+      try {
+        const requestsSnap = await getDocs(collection(db, 'designRequests'));
+        if (requestsSnap.empty) {
+          await setDoc(doc(db, 'designRequests', 'placeholder_init'), {
+            id: 'placeholder_init',
+            name: 'بوابة رويال جروب',
+            phone: '+9647700000000',
+            city: 'بغداد',
+            projectType: 'residential',
+            area: '250',
+            budget: 'medium',
+            status: 'reviewed',
+            createdAt: Date.now()
+          });
+        }
+      } catch (e) {
+        console.warn("Could not check/seed Design Requests (expected for public guest users):", e);
       }
 
       // Subscribe to Projects
-      const qProjects = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
-      const unsubscribeProjects = onSnapshot(qProjects, (snapshot) => {
-        const projList: Project[] = [];
-        snapshot.forEach(doc => {
-          projList.push(doc.data() as Project);
+      try {
+        const qProjects = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
+        const unsubscribeProjects = onSnapshot(qProjects, (snapshot) => {
+          const projList: Project[] = [];
+          snapshot.forEach(doc => {
+            projList.push(doc.data() as Project);
+          });
+          if (projList.length > 0) {
+            setProjects(projList);
+          } else {
+            setProjects([]);
+          }
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, 'projects');
         });
-        if (projList.length > 0) {
-          setProjects(projList);
-        } else {
-          setProjects([]);
-        }
-      }, (error) => {
-        handleFirestoreError(error, OperationType.LIST, 'projects');
-      });
+      } catch (e) {
+        console.error("Error subscribing to Projects:", e);
+      }
 
       // Subscribe to Color Variants
-      const qColors = query(collection(db, 'colorVariants'), orderBy('createdAt', 'desc'));
-      const unsubscribeColors = onSnapshot(qColors, (snapshot) => {
-        const colorList: ColorVariant[] = [];
-        snapshot.forEach(doc => {
-          colorList.push(doc.data() as ColorVariant);
+      try {
+        const qColors = query(collection(db, 'colorVariants'), orderBy('createdAt', 'desc'));
+        const unsubscribeColors = onSnapshot(qColors, (snapshot) => {
+          const colorList: ColorVariant[] = [];
+          snapshot.forEach(doc => {
+            colorList.push(doc.data() as ColorVariant);
+          });
+          setColorVariants(colorList);
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, 'colorVariants');
         });
-        setColorVariants(colorList);
-      }, (error) => {
-        handleFirestoreError(error, OperationType.LIST, 'colorVariants');
-      });
+      } catch (e) {
+        console.error("Error subscribing to Color Variants:", e);
+      }
 
       // Subscribe to Design Requests
-      const qRequests = query(collection(db, 'designRequests'), orderBy('createdAt', 'desc'));
-      const unsubscribeRequests = onSnapshot(qRequests, (snapshot) => {
-        const reqList: DesignRequest[] = [];
-        snapshot.forEach(doc => {
-          reqList.push(doc.data() as DesignRequest);
+      try {
+        const qRequests = query(collection(db, 'designRequests'), orderBy('createdAt', 'desc'));
+        const unsubscribeRequests = onSnapshot(qRequests, (snapshot) => {
+          const reqList: DesignRequest[] = [];
+          snapshot.forEach(doc => {
+            reqList.push(doc.data() as DesignRequest);
+          });
+          setDesignRequests(reqList);
+        }, (error) => {
+          // Safe to ignore if permissions block normal users, admins will succeed
+          console.warn("Requests read blocked for normal user (which is correct by design).");
         });
-        setDesignRequests(reqList);
-      }, (error) => {
-        // Safe to ignore if permissions block normal users, admins will succeed
-        console.warn("Requests read blocked for normal user (which is correct by design).");
-      });
+      } catch (e) {
+        console.error("Error subscribing to Design Requests:", e);
+      }
 
       // 6. Check and Seed Bedroom Options
-      const bedroomOptionsSnap = await getDocs(collection(db, 'bedroomOptions'));
-      if (bedroomOptionsSnap.empty) {
-        for (const item of seedBedroomOptions) {
-          const newId = `bedopt_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
-          const newOpt: BedroomOption = {
-            ...item,
-            id: newId,
-            createdAt: Date.now()
-          };
-          await setDoc(doc(db, 'bedroomOptions', newId), newOpt);
+      try {
+        const bedroomOptionsSnap = await getDocs(collection(db, 'bedroomOptions'));
+        if (bedroomOptionsSnap.empty) {
+          for (const item of seedBedroomOptions) {
+            const newId = `bedopt_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
+            const newOpt: BedroomOption = {
+              ...item,
+              id: newId,
+              createdAt: Date.now()
+            };
+            await setDoc(doc(db, 'bedroomOptions', newId), newOpt);
+          }
         }
+      } catch (e) {
+        console.error("Error seeding Bedroom Options:", e);
       }
 
       // Subscribe to Bedroom Options
-      const qBedroomOptions = query(collection(db, 'bedroomOptions'), orderBy('createdAt', 'desc'));
-      const unsubscribeBedroomOptions = onSnapshot(qBedroomOptions, (snapshot) => {
-        const list: BedroomOption[] = [];
-        snapshot.forEach(doc => {
-          list.push(doc.data() as BedroomOption);
+      try {
+        const qBedroomOptions = query(collection(db, 'bedroomOptions'), orderBy('createdAt', 'desc'));
+        const unsubscribeBedroomOptions = onSnapshot(qBedroomOptions, (snapshot) => {
+          const list: BedroomOption[] = [];
+          snapshot.forEach(doc => {
+            list.push(doc.data() as BedroomOption);
+          });
+          if (list.length > 0) {
+            setBedroomOptions(list);
+          } else {
+            setBedroomOptions([]);
+          }
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, 'bedroomOptions');
         });
-        if (list.length > 0) {
-          setBedroomOptions(list);
-        } else {
-          setBedroomOptions([]);
-        }
-      }, (error) => {
-        handleFirestoreError(error, OperationType.LIST, 'bedroomOptions');
-      });
+      } catch (e) {
+        console.error("Error subscribing to Bedroom Options:", e);
+      }
 
       // Subscribe to Bedroom Submissions
-      const qBedroomSubmissions = query(collection(db, 'bedroomSubmissions'), orderBy('createdAt', 'desc'));
-      const unsubscribeBedroomSubmissions = onSnapshot(qBedroomSubmissions, (snapshot) => {
-        const list: BedroomSubmission[] = [];
-        snapshot.forEach(doc => {
-          list.push(doc.data() as BedroomSubmission);
+      try {
+        const qBedroomSubmissions = query(collection(db, 'bedroomSubmissions'), orderBy('createdAt', 'desc'));
+        const unsubscribeBedroomSubmissions = onSnapshot(qBedroomSubmissions, (snapshot) => {
+          const list: BedroomSubmission[] = [];
+          snapshot.forEach(doc => {
+            list.push(doc.data() as BedroomSubmission);
+          });
+          setBedroomSubmissions(list);
+        }, (error) => {
+          // Safe to ignore if permissions block normal users, admins will succeed
+          console.warn("Submissions read blocked for normal user (which is correct by design).");
         });
-        setBedroomSubmissions(list);
-      }, (error) => {
-        // Safe to ignore if permissions block normal users, admins will succeed
-        console.warn("Submissions read blocked for normal user (which is correct by design).");
-      });
+      } catch (e) {
+        console.error("Error subscribing to Bedroom Submissions:", e);
+      }
 
       // Fetch Company Settings (Single Document)
-      const settingsDocRef = doc(db, 'companySettings', 'main');
-      const settingsSnap = await getDoc(settingsDocRef);
-      if (settingsSnap.exists()) {
-        setCompanySettings(settingsSnap.data() as CompanySettings);
-      } else {
-        await setDoc(settingsDocRef, mockCompanySettings);
-        setCompanySettings(mockCompanySettings);
+      try {
+        const settingsDocRef = doc(db, 'companySettings', 'main');
+        const settingsSnap = await getDoc(settingsDocRef);
+        if (settingsSnap.exists()) {
+          setCompanySettings(settingsSnap.data() as CompanySettings);
+        } else {
+          await setDoc(settingsDocRef, mockCompanySettings);
+          setCompanySettings(mockCompanySettings);
+        }
+      } catch (e) {
+        console.error("Error syncing Company Settings:", e);
       }
 
       // Fetch Social Links (Single Document)
-      const socialDocRef = doc(db, 'socialLinks', 'main');
-      const socialSnap = await getDoc(socialDocRef);
-      if (socialSnap.exists()) {
-        setSocialLinks(socialSnap.data() as SocialLinks);
-      } else {
-        await setDoc(socialDocRef, mockSocialLinks);
-        setSocialLinks(mockSocialLinks);
+      try {
+        const socialDocRef = doc(db, 'socialLinks', 'main');
+        const socialSnap = await getDoc(socialDocRef);
+        if (socialSnap.exists()) {
+          setSocialLinks(socialSnap.data() as SocialLinks);
+        } else {
+          await setDoc(socialDocRef, mockSocialLinks);
+          setSocialLinks(mockSocialLinks);
+        }
+      } catch (e) {
+        console.error("Error syncing Social Links:", e);
       }
 
       setLoading(false);
@@ -523,25 +575,33 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
           }
         });
       } catch (e) {
-        console.error("Error generating unique request number from Firestore:", e);
+        console.warn("Secure permission boundary restricts guest listing of request history. Generating a unique ID-based reference code.");
       }
     }
     
     // Fallback/Demo check in local state
-    designRequests.forEach(r => {
-      if (r.requestNumber && r.requestNumber.startsWith('RG-')) {
-        const num = parseInt(r.requestNumber.replace('RG-', ''), 10);
-        if (!isNaN(num) && num > maxNum) maxNum = num;
-      }
-    });
-    bedroomSubmissions.forEach(s => {
-      if (s.requestNumber && s.requestNumber.startsWith('RG-')) {
-        const num = parseInt(s.requestNumber.replace('RG-', ''), 10);
-        if (!isNaN(num) && num > maxNum) maxNum = num;
-      }
-    });
+    if (designRequests.length > 0 || bedroomSubmissions.length > 0) {
+      designRequests.forEach(r => {
+        if (r.requestNumber && r.requestNumber.startsWith('RG-')) {
+          const num = parseInt(r.requestNumber.replace('RG-', ''), 10);
+          if (!isNaN(num) && num > maxNum) maxNum = num;
+        }
+      });
+      bedroomSubmissions.forEach(s => {
+        if (s.requestNumber && s.requestNumber.startsWith('RG-')) {
+          const num = parseInt(s.requestNumber.replace('RG-', ''), 10);
+          if (!isNaN(num) && num > maxNum) maxNum = num;
+        }
+      });
+    }
     
-    return `RG-${String(maxNum + 1).padStart(6, '0')}`;
+    if (maxNum > 0) {
+      return `RG-${String(maxNum + 1).padStart(6, '0')}`;
+    }
+    
+    // Generate highly unique randomized reference code as secure guest fallback
+    const rand = Math.floor(100000 + Math.random() * 900000);
+    return `RG-${rand}`;
   };
 
   /**

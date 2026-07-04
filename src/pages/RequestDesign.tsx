@@ -64,9 +64,27 @@ export const RequestDesign: React.FC = () => {
       setPlanFiles([]);
       setImageFiles([]);
     } catch (err: any) {
-      console.error(err);
+      console.error("Form Submission Error:", err);
+      
+      let finalError = 'حدث خطأ أثناء إرسال طلبك. يرجى مراجعة إعدادات قاعدة البيانات أو المحاولة لاحقاً.';
+      if (err && err.message) {
+        try {
+          // If it is a stringified JSON containing FirestoreErrorInfo
+          const parsed = JSON.parse(err.message);
+          if (parsed && parsed.error) {
+            finalError = `فشل الإرسال بقاعدة البيانات: ${parsed.error}`;
+          } else {
+            finalError = `فشل الإرسال: ${err.message}`;
+          }
+        } catch (e) {
+          finalError = `فشل الإرسال: ${err.message}`;
+        }
+      } else if (typeof err === 'string') {
+        finalError = `فشل الإرسال: ${err}`;
+      }
+
       setStatus('error');
-      setErrorMessage('حدث خطأ أثناء إرسال طلبك. يرجى مراجعة إعدادات قاعدة البيانات أو المحاولة لاحقاً.');
+      setErrorMessage(finalError);
     }
   };
 
