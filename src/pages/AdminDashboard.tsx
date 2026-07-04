@@ -327,6 +327,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
+  const handleOpenAddProjectForCategory = (categoryName: string) => {
+    resetProjectForm();
+    setProjCategory(categoryName);
+    setShowProjectForm(true);
+  };
+
+  const handleReorderProject = async (projId: string, direction: 'up' | 'down') => {
+    const sorted = [...projects].sort((a, b) => {
+      const idxA = typeof a.orderIndex === 'number' ? a.orderIndex : 999999;
+      const idxB = typeof b.orderIndex === 'number' ? b.orderIndex : 999999;
+      if (idxA !== idxB) return idxA - idxB;
+      return b.createdAt - a.createdAt;
+    });
+
+    const index = sorted.findIndex(p => p.id === projId);
+    if (index === -1) return;
+
+    let targetIndex = -1;
+    if (direction === 'up' && index > 0) {
+      targetIndex = index - 1;
+    } else if (direction === 'down' && index < sorted.length - 1) {
+      targetIndex = index + 1;
+    }
+
+    if (targetIndex !== -1) {
+      try {
+        setGlobalLoading(true);
+        const currentProj = sorted[index];
+        const targetProj = sorted[targetIndex];
+
+        await updateProject(currentProj.id, { orderIndex: targetIndex });
+        await updateProject(targetProj.id, { orderIndex: index });
+        
+        showFeedback('تم تغيير ترتيب المشروع بنجاح!');
+      } catch (err) {
+        console.error(err);
+        showFeedback('فشل في إعادة ترتيب المشاريع.', 'error');
+      } finally {
+        setGlobalLoading(false);
+      }
+    }
+  };
+
   const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     try {
@@ -542,11 +585,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         <div className="flex flex-wrap items-center gap-2 border-b border-[#d4af37]/10 pb-4">
           {[
             { id: 'dashboard', label: 'لوحة القياس (Stats)', icon: <Sliders className="w-4 h-4" /> },
-            { id: 'bedrooms', label: 'غرف النوم (Bedrooms)', icon: <Crown className="w-4 h-4 text-[#d4af37]" /> },
-            { id: 'kitchens', label: 'المطابخ (Kitchens)', icon: <Palette className="w-4 h-4" /> },
-            { id: 'dressing', label: 'غرف الملابس (Dressing)', icon: <Settings className="w-4 h-4" /> },
-            { id: 'wood', label: 'ديكورات خشبية (Wood)', icon: <Star className="w-4 h-4" /> },
-            { id: 'projects', label: 'إدارة جميع المشاريع', icon: <ImageIcon className="w-4 h-4" /> },
+            { id: 'bedrooms', label: 'غرف النوم (Bedrooms)', icon: <Crown className="w-4 h-4 text-[#d4af37]" />, badge: `${projects.filter(p => p.category === 'غرف نوم').length} مشاريع` },
+            { id: 'kitchens', label: 'المطابخ (Kitchens)', icon: <Palette className="w-4 h-4" />, badge: `${projects.filter(p => p.category === 'مطابخ').length} مشاريع` },
+            { id: 'dressing', label: 'غرف الملابس (Dressing)', icon: <Settings className="w-4 h-4" />, badge: `${projects.filter(p => p.category === 'غرف ملابس').length} مشاريع` },
+            { id: 'wood', label: 'ديكورات خشبية (Wood)', icon: <Star className="w-4 h-4" />, badge: `${projects.filter(p => p.category === 'ديكورات خشبية').length} مشاريع` },
+            { id: 'projects', label: 'إدارة جميع المشاريع', icon: <ImageIcon className="w-4 h-4" />, badge: `${projects.length} كلي` },
             { 
               id: 'requests', 
               label: 'طلبات العملاء (Inbox)', 
@@ -571,7 +614,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             >
               {tab.icon}
               <span>{tab.label}</span>
-              {tab.badge && <span className="px-1.5 py-0.5 bg-red-600 text-white rounded-full text-[9px] font-black">{tab.badge}</span>}
+              {tab.badge && (
+                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${
+                  tab.id === 'requests' && unreadCount > 0
+                    ? 'bg-red-600 text-white border-red-700'
+                    : 'bg-[#d4af37]/15 text-[#aa7c11] border-[#d4af37]/25'
+                }`}>
+                  {tab.badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -725,22 +776,89 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </div>
             </div>
 
-            {/* Custom Bedroom submissions inbox */}
-            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
-              <h4 className="text-xs font-black text-[#1e1e1a] border-r-2 border-[#d4af37] pr-2.5">استمارات خيارات غرف النوم من الزبائن ({bedroomSubmissions.length})</h4>
-              <div className="space-y-4">
-                {bedroomSubmissions.map(sub => (
-                  <div key={sub.id} className="border border-gray-100 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:shadow-md transition-all">
-                    <div>
-                      <h5 className="text-xs font-black text-gray-900">{sub.clientName} (رقم: {sub.requestNumber || 'معلق'})</h5>
-                      <span className="text-[10px] text-gray-400">الهاتف: {sub.clientPhone} • التاريخ: {new Date(sub.createdAt).toLocaleDateString('ar-IQ')}</span>
+            {/* Custom Bedroom submissions inbox & projects block */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-right">
+              {/* Bedroom Projects */}
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
+                <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+                  <h4 className="text-xs font-black text-[#1e1e1a] border-r-2 border-[#d4af37] pr-2.5">
+                    مشاريع غرف نوم رويال جروب ({projects.filter(p => p.category === 'غرف نوم').length})
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddProjectForCategory('غرف نوم')}
+                    className="px-3 py-1.5 bg-[#171714] text-[#d4af37] hover:bg-black text-[10px] font-bold rounded-lg flex items-center gap-1 transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    إضافة مشروع جديد
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-1 gap-4 max-h-[500px] overflow-y-auto pr-1">
+                  {projects
+                    .filter(p => p.category === 'غرف نوم')
+                    .sort((a, b) => {
+                      const idxA = typeof a.orderIndex === 'number' ? a.orderIndex : 999999;
+                      const idxB = typeof b.orderIndex === 'number' ? b.orderIndex : 999999;
+                      if (idxA !== idxB) return idxA - idxB;
+                      return b.createdAt - a.createdAt;
+                    })
+                    .map((p, pIdx, arr) => (
+                      <div key={p.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between gap-3 relative hover:shadow-sm transition-all">
+                        <div className="flex items-center gap-3">
+                          <img src={p.coverImage} className="w-14 h-14 object-cover rounded-lg border border-gray-200 shadow-inner" />
+                          <div>
+                            <h5 className="text-xs font-bold text-gray-900">{p.title}</h5>
+                            <p className="text-[10px] text-gray-400">{p.city} • {p.area}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {/* Reordering Controls */}
+                          <div className="flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              disabled={pIdx === 0}
+                              onClick={() => handleReorderProject(p.id, 'up')}
+                              className="p-1 hover:bg-gray-200 rounded text-gray-500 disabled:opacity-25 text-[10px]"
+                              title="تحريك لأعلى"
+                            >
+                              ▲
+                            </button>
+                            <button
+                              type="button"
+                              disabled={pIdx === arr.length - 1}
+                              onClick={() => handleReorderProject(p.id, 'down')}
+                              className="p-1 hover:bg-gray-200 rounded text-gray-500 disabled:opacity-25 text-[10px]"
+                              title="تحريك لأسفل"
+                            >
+                              ▼
+                            </button>
+                          </div>
+                          <button onClick={() => handleOpenEditProject(p)} className="p-1.5 text-gray-500 hover:text-[#d4af37] hover:bg-amber-50 rounded" title="تعديل"><Edit2 className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => { if(window.confirm('حذف هذا المشروع نهائياً؟')) deleteProject(p.id); }} className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded" title="حذف"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              {/* Custom Bedroom submissions inbox */}
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
+                <h4 className="text-xs font-black text-[#1e1e1a] border-r-2 border-[#d4af37] pr-2.5">استمارات خيارات غرف النوم من الزبائن ({bedroomSubmissions.length})</h4>
+                <div className="space-y-4">
+                  {bedroomSubmissions.map(sub => (
+                    <div key={sub.id} className="border border-gray-100 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:shadow-md transition-all">
+                      <div>
+                        <h5 className="text-xs font-black text-gray-900">{sub.clientName} (رقم: {sub.requestNumber || 'معلق'})</h5>
+                        <span className="text-[10px] text-gray-400">الهاتف: {sub.clientPhone} • التاريخ: {new Date(sub.createdAt).toLocaleDateString('ar-IQ')}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => handleOpenSubmission(sub)} className="px-3 py-1.5 bg-[#171714] text-[#d4af37] rounded-lg text-xs font-bold">عرض الاختيارات والملاحظات</button>
+                        <button onClick={() => { if(window.confirm('حذف استمارة النوم؟')) deleteBedroomSubmission(sub.id); }} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => handleOpenSubmission(sub)} className="px-3 py-1.5 bg-[#171714] text-[#d4af37] rounded-lg text-xs font-bold">عرض الاختيارات والملاحظات</button>
-                      <button onClick={() => { if(window.confirm('حذف استمارة النوم؟')) deleteBedroomSubmission(sub.id); }} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -748,22 +866,69 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
         {/* ==================== SUB TAB: KITCHENS ==================== */}
         {activeSubTab === 'kitchens' && (
-          <div className="space-y-8">
+          <div className="space-y-8 text-right">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Kitchen Projects */}
               <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
-                <h4 className="text-xs font-black text-[#1e1e1a] border-r-2 border-[#d4af37] pr-2.5">مشاريع مطابخ رويال جروب ({projects.filter(p => p.category === 'مطابخ').length})</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto">
-                  {projects.filter(p => p.category === 'مطابخ').map(p => (
-                    <div key={p.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 flex gap-3 relative">
-                      <img src={p.coverImage} className="w-12 h-12 object-cover rounded-lg" />
-                      <div>
-                        <h5 className="text-xs font-bold text-gray-900 truncate">{p.title}</h5>
-                        <p className="text-[10px] text-gray-400">{p.city}</p>
+                <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+                  <h4 className="text-xs font-black text-[#1e1e1a] border-r-2 border-[#d4af37] pr-2.5">
+                    مشاريع مطابخ رويال جروب ({projects.filter(p => p.category === 'مطابخ').length})
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddProjectForCategory('مطابخ')}
+                    className="px-3 py-1.5 bg-[#171714] text-[#d4af37] hover:bg-black text-[10px] font-bold rounded-lg flex items-center gap-1 transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    إضافة مشروع جديد
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-1 gap-4 max-h-[500px] overflow-y-auto pr-1">
+                  {projects
+                    .filter(p => p.category === 'مطابخ')
+                    .sort((a, b) => {
+                      const idxA = typeof a.orderIndex === 'number' ? a.orderIndex : 999999;
+                      const idxB = typeof b.orderIndex === 'number' ? b.orderIndex : 999999;
+                      if (idxA !== idxB) return idxA - idxB;
+                      return b.createdAt - a.createdAt;
+                    })
+                    .map((p, pIdx, arr) => (
+                      <div key={p.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between gap-3 relative hover:shadow-sm transition-all">
+                        <div className="flex items-center gap-3">
+                          <img src={p.coverImage} className="w-14 h-14 object-cover rounded-lg border border-gray-200 shadow-inner" />
+                          <div>
+                            <h5 className="text-xs font-bold text-gray-900">{p.title}</h5>
+                            <p className="text-[10px] text-gray-400">{p.city} • {p.area}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {/* Reordering Controls */}
+                          <div className="flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              disabled={pIdx === 0}
+                              onClick={() => handleReorderProject(p.id, 'up')}
+                              className="p-1 hover:bg-gray-200 rounded text-gray-500 disabled:opacity-25 text-[10px]"
+                              title="تحريك لأعلى"
+                            >
+                              ▲
+                            </button>
+                            <button
+                              type="button"
+                              disabled={pIdx === arr.length - 1}
+                              onClick={() => handleReorderProject(p.id, 'down')}
+                              className="p-1 hover:bg-gray-200 rounded text-gray-500 disabled:opacity-25 text-[10px]"
+                              title="تحريك لأسفل"
+                            >
+                              ▼
+                            </button>
+                          </div>
+                          <button onClick={() => handleOpenEditProject(p)} className="p-1.5 text-gray-500 hover:text-[#d4af37] hover:bg-amber-50 rounded" title="تعديل"><Edit2 className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => { if(window.confirm('حذف هذا المشروع نهائياً؟')) deleteProject(p.id); }} className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded" title="حذف"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
                       </div>
-                      <button onClick={() => handleOpenEditProject(p)} className="absolute bottom-2 left-2 p-1 text-gray-400 hover:text-[#d4af37]"><Edit2 className="w-3.5 h-3.5" /></button>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </div>
 
@@ -788,22 +953,69 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
         {/* ==================== SUB TAB: DRESSING ==================== */}
         {activeSubTab === 'dressing' && (
-          <div className="space-y-8">
+          <div className="space-y-8 text-right">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Dressing Projects */}
               <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
-                <h4 className="text-xs font-black text-[#1e1e1a] border-r-2 border-[#d4af37] pr-2.5">مشاريع غرف ملابس ودريسنج روم ({projects.filter(p => p.category === 'غرف ملابس').length})</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto">
-                  {projects.filter(p => p.category === 'غرف ملابس').map(p => (
-                    <div key={p.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 flex gap-3 relative">
-                      <img src={p.coverImage} className="w-12 h-12 object-cover rounded-lg" />
-                      <div>
-                        <h5 className="text-xs font-bold text-gray-900 truncate">{p.title}</h5>
-                        <p className="text-[10px] text-gray-400">{p.city}</p>
+                <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+                  <h4 className="text-xs font-black text-[#1e1e1a] border-r-2 border-[#d4af37] pr-2.5">
+                    مشاريع غرف ملابس ودريسنج روم ({projects.filter(p => p.category === 'غرف ملابس').length})
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddProjectForCategory('غرف ملابس')}
+                    className="px-3 py-1.5 bg-[#171714] text-[#d4af37] hover:bg-black text-[10px] font-bold rounded-lg flex items-center gap-1 transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    إضافة مشروع جديد
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-1 gap-4 max-h-[500px] overflow-y-auto pr-1">
+                  {projects
+                    .filter(p => p.category === 'غرف ملابس')
+                    .sort((a, b) => {
+                      const idxA = typeof a.orderIndex === 'number' ? a.orderIndex : 999999;
+                      const idxB = typeof b.orderIndex === 'number' ? b.orderIndex : 999999;
+                      if (idxA !== idxB) return idxA - idxB;
+                      return b.createdAt - a.createdAt;
+                    })
+                    .map((p, pIdx, arr) => (
+                      <div key={p.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between gap-3 relative hover:shadow-sm transition-all">
+                        <div className="flex items-center gap-3">
+                          <img src={p.coverImage} className="w-14 h-14 object-cover rounded-lg border border-gray-200 shadow-inner" />
+                          <div>
+                            <h5 className="text-xs font-bold text-gray-900">{p.title}</h5>
+                            <p className="text-[10px] text-gray-400">{p.city} • {p.area}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {/* Reordering Controls */}
+                          <div className="flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              disabled={pIdx === 0}
+                              onClick={() => handleReorderProject(p.id, 'up')}
+                              className="p-1 hover:bg-gray-200 rounded text-gray-500 disabled:opacity-25 text-[10px]"
+                              title="تحريك لأعلى"
+                            >
+                              ▲
+                            </button>
+                            <button
+                              type="button"
+                              disabled={pIdx === arr.length - 1}
+                              onClick={() => handleReorderProject(p.id, 'down')}
+                              className="p-1 hover:bg-gray-200 rounded text-gray-500 disabled:opacity-25 text-[10px]"
+                              title="تحريك لأسفل"
+                            >
+                              ▼
+                            </button>
+                          </div>
+                          <button onClick={() => handleOpenEditProject(p)} className="p-1.5 text-gray-500 hover:text-[#d4af37] hover:bg-amber-50 rounded" title="تعديل"><Edit2 className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => { if(window.confirm('حذف هذا المشروع نهائياً؟')) deleteProject(p.id); }} className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded" title="حذف"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
                       </div>
-                      <button onClick={() => handleOpenEditProject(p)} className="absolute bottom-2 left-2 p-1 text-gray-400 hover:text-[#d4af37]"><Edit2 className="w-3.5 h-3.5" /></button>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </div>
 
@@ -828,22 +1040,69 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
         {/* ==================== SUB TAB: WOOD ==================== */}
         {activeSubTab === 'wood' && (
-          <div className="space-y-8">
+          <div className="space-y-8 text-right">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Wood Projects */}
               <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
-                <h4 className="text-xs font-black text-[#1e1e1a] border-r-2 border-[#d4af37] pr-2.5">مشاريع الديكورات الخشبية ({projects.filter(p => p.category === 'ديكورات خشبية').length})</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto">
-                  {projects.filter(p => p.category === 'ديكورات خشبية').map(p => (
-                    <div key={p.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 flex gap-3 relative">
-                      <img src={p.coverImage} className="w-12 h-12 object-cover rounded-lg" />
-                      <div>
-                        <h5 className="text-xs font-bold text-gray-900 truncate">{p.title}</h5>
-                        <p className="text-[10px] text-gray-400">{p.city}</p>
+                <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+                  <h4 className="text-xs font-black text-[#1e1e1a] border-r-2 border-[#d4af37] pr-2.5">
+                    مشاريع الديكورات الخشبية ({projects.filter(p => p.category === 'ديكورات خشبية').length})
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddProjectForCategory('ديكورات خشبية')}
+                    className="px-3 py-1.5 bg-[#171714] text-[#d4af37] hover:bg-black text-[10px] font-bold rounded-lg flex items-center gap-1 transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    إضافة مشروع جديد
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-1 gap-4 max-h-[500px] overflow-y-auto pr-1">
+                  {projects
+                    .filter(p => p.category === 'ديكورات خشبية')
+                    .sort((a, b) => {
+                      const idxA = typeof a.orderIndex === 'number' ? a.orderIndex : 999999;
+                      const idxB = typeof b.orderIndex === 'number' ? b.orderIndex : 999999;
+                      if (idxA !== idxB) return idxA - idxB;
+                      return b.createdAt - a.createdAt;
+                    })
+                    .map((p, pIdx, arr) => (
+                      <div key={p.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between gap-3 relative hover:shadow-sm transition-all">
+                        <div className="flex items-center gap-3">
+                          <img src={p.coverImage} className="w-14 h-14 object-cover rounded-lg border border-gray-200 shadow-inner" />
+                          <div>
+                            <h5 className="text-xs font-bold text-gray-900">{p.title}</h5>
+                            <p className="text-[10px] text-gray-400">{p.city} • {p.area}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {/* Reordering Controls */}
+                          <div className="flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              disabled={pIdx === 0}
+                              onClick={() => handleReorderProject(p.id, 'up')}
+                              className="p-1 hover:bg-gray-200 rounded text-gray-500 disabled:opacity-25 text-[10px]"
+                              title="تحريك لأعلى"
+                            >
+                              ▲
+                            </button>
+                            <button
+                              type="button"
+                              disabled={pIdx === arr.length - 1}
+                              onClick={() => handleReorderProject(p.id, 'down')}
+                              className="p-1 hover:bg-gray-200 rounded text-gray-500 disabled:opacity-25 text-[10px]"
+                              title="تحريك لأسفل"
+                            >
+                              ▼
+                            </button>
+                          </div>
+                          <button onClick={() => handleOpenEditProject(p)} className="p-1.5 text-gray-500 hover:text-[#d4af37] hover:bg-amber-50 rounded" title="تعديل"><Edit2 className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => { if(window.confirm('حذف هذا المشروع نهائياً؟')) deleteProject(p.id); }} className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded" title="حذف"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
                       </div>
-                      <button onClick={() => handleOpenEditProject(p)} className="absolute bottom-2 left-2 p-1 text-gray-400 hover:text-[#d4af37]"><Edit2 className="w-3.5 h-3.5" /></button>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </div>
 
@@ -868,124 +1127,69 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
         {/* ==================== SUB TAB: PROJECTS ==================== */}
         {activeSubTab === 'projects' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h3 className="text-base font-black text-gray-900">إدارة معرض الأعمال والمقارنات</h3>
-              {!showProjectForm && (
-                <button onClick={() => setShowProjectForm(true)} className="px-4 py-2.5 bg-[#171714] text-[#d4af37] text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer">
-                  <Plus className="w-4 h-4" />
-                  إضافة مشروع جديد
-                </button>
-              )}
+          <div className="space-y-6 text-right">
+            <div className="flex justify-between items-center pb-4 border-b border-gray-100 flex-wrap gap-4">
+              <button 
+                onClick={() => handleOpenAddProjectForCategory('غرف نوم')} 
+                className="px-4 py-2.5 bg-[#171714] text-[#d4af37] text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer hover:bg-black transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                إضافة مشروع جديد
+              </button>
+              <h3 className="text-base font-black text-gray-900 border-r-2 border-[#d4af37] pr-2.5">إدارة معرض الأعمال والمقارنات العامة ({projects.length} مشروع)</h3>
             </div>
-
-            {/* Project Form */}
-            {showProjectForm && (
-              <form onSubmit={handleSaveProject} className="bg-white p-6 md:p-8 rounded-3xl border border-gray-200 shadow-sm space-y-6">
-                <h4 className="text-sm font-bold text-[#1e1e1a] border-r-2 border-[#d4af37] pr-2.5">
-                  {editingProject ? `تعديل مشروع: ${editingProject.title}` : 'تفاصيل المشروع الجديد'}
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-                  <div className="space-y-1.5">
-                    <label className="font-semibold text-gray-700">عنوان المشروع</label>
-                    <input type="text" required value={projTitle} onChange={(e) => setProjTitle(e.target.value)} placeholder="عنوان المشروع" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="font-semibold text-gray-700">القسم</label>
-                      <select value={projCategory} onChange={(e) => setProjCategory(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl font-bold">
-                        {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="font-semibold text-gray-700">مشروع مميز؟</label>
-                      <div className="flex items-center h-[46px] pr-2">
-                        <input type="checkbox" checked={projFeatured} onChange={(e) => setProjFeatured(e.target.checked)} className="w-4 h-4 rounded text-[#d4af37] focus:ring-[#d4af37]" />
-                        <span className="text-xs font-bold text-gray-700 mr-2">تثبيت بالرئيسية</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-6 text-xs">
-                  <div className="space-y-1.5">
-                    <label className="font-semibold text-gray-700">المساحة</label>
-                    <input type="text" required value={projArea} onChange={(e) => setProjArea(e.target.value)} placeholder="مثال: 45 م²" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="font-semibold text-gray-700">المدينة</label>
-                    <input type="text" required value={projCity} onChange={(e) => setProjCity(e.target.value)} placeholder="مثال: بغداد - الجادرية" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl" />
-                  </div>
-                </div>
-                <div className="space-y-1.5 text-xs">
-                  <label className="font-semibold text-gray-700">الوصف التفصيلي</label>
-                  <textarea rows={4} required value={projDesc} onChange={(e) => setProjDesc(e.target.value)} placeholder="تفاصيل التصميم والمواد..." className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl resize-none" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-gray-100 text-xs">
-                  <div className="space-y-2">
-                    <label className="font-bold">رابط صورة الغلاف</label>
-                    <input type="text" value={projCoverUrl} onChange={(e) => setProjCoverUrl(e.target.value)} placeholder="رابط صورة مباشرة" className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl" />
-                    <input type="file" onChange={(e) => e.target.files && setProjCoverFile(e.target.files[0])} className="w-full" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="font-bold text-gray-400">مقارنة: صورة "قبل" (اختياري)</label>
-                    <input type="text" value={projBeforeUrl} onChange={(e) => setProjBeforeUrl(e.target.value)} placeholder="رابط صورة" className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl" />
-                    <input type="file" onChange={(e) => e.target.files && setProjBeforeFile(e.target.files[0])} className="w-full" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="font-bold text-[#d4af37]">مقارنة: صورة "بعد" (اختياري)</label>
-                    <input type="text" value={projAfterUrl} onChange={(e) => setProjAfterUrl(e.target.value)} placeholder="رابط صورة" className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl" />
-                    <input type="file" onChange={(e) => e.target.files && setProjAfterFile(e.target.files[0])} className="w-full" />
-                  </div>
-                </div>
-
-                {/* Project Gallery */}
-                <div className="space-y-2 pt-4 border-t border-gray-100 text-xs">
-                  <label className="font-bold">صور إضافية للمعرض</label>
-                  <div className="flex gap-2 max-w-md">
-                    <input type="text" id="addGalInput" placeholder="أدخل رابط صورة لإضافته..." className="flex-1 p-2 bg-gray-50 border border-gray-200 rounded-lg outline-none" />
-                    <button type="button" onClick={() => {
-                      const inp = document.getElementById('addGalInput') as HTMLInputElement;
-                      if(inp && inp.value.trim()) { setProjGalleryUrls(p => [...p, inp.value.trim()]); inp.value = ''; }
-                    }} className="px-4 py-1.5 bg-[#171714] text-white rounded font-bold text-[10px]">إضافة</button>
-                  </div>
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {projGalleryUrls.map((g, i) => (
-                      <div key={i} className="relative w-16 h-16 rounded border bg-[#171714] overflow-hidden group">
-                        <img src={g} className="w-full h-full object-cover" />
-                        <button type="button" onClick={() => setProjGalleryUrls(prev => prev.filter((_, idx) => idx !== i))} className="absolute inset-0 bg-red-600/80 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center font-bold text-[10px]">حذف</button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                  <button type="button" onClick={resetProjectForm} className="px-5 py-2.5 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-xl text-xs font-bold">إلغاء</button>
-                  <button type="submit" className="px-8 py-2.5 bg-[#171714] text-[#d4af37] hover:bg-black rounded-xl text-xs font-bold">حفظ المشروع</button>
-                </div>
-              </form>
-            )}
 
             {/* Existing Projects grid list */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {projects.map(p => (
-                <div key={p.id} className="bg-white rounded-2xl border border-gray-150 p-4 shadow-sm flex flex-col justify-between space-y-4">
-                  <div className="flex gap-3 text-right">
-                    <img src={p.coverImage} className="w-16 h-16 rounded-xl object-cover border" />
-                    <div className="space-y-1">
-                      <span className="px-2 py-0.5 bg-[#d4af37]/10 text-[#d4af37] text-[9px] font-black rounded">{p.category}</span>
-                      <h4 className="text-xs font-bold text-gray-900 truncate">{p.title}</h4>
-                      <p className="text-[10px] text-gray-400 truncate">{p.city}</p>
+              {projects
+                .sort((a, b) => {
+                  const idxA = typeof a.orderIndex === 'number' ? a.orderIndex : 999999;
+                  const idxB = typeof b.orderIndex === 'number' ? b.orderIndex : 999999;
+                  if (idxA !== idxB) return idxA - idxB;
+                  return b.createdAt - a.createdAt;
+                })
+                .map((p, pIdx, arr) => (
+                  <div key={p.id} className="bg-white rounded-2xl border border-gray-150 p-4 shadow-sm flex flex-col justify-between space-y-4 hover:shadow-md transition-all">
+                    <div className="flex gap-3 text-right">
+                      <img src={p.coverImage} className="w-16 h-16 rounded-xl object-cover border" />
+                      <div className="space-y-1 flex-1 min-w-0">
+                        <span className="px-2 py-0.5 bg-[#d4af37]/10 text-[#d4af37] text-[9px] font-black rounded">{p.category}</span>
+                        <h4 className="text-xs font-bold text-gray-900 truncate">{p.title}</h4>
+                        <p className="text-[10px] text-gray-400 truncate">{p.city}</p>
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] border-t border-gray-100 pt-3 flex-wrap gap-2">
+                      <div className="flex items-center gap-1.5">
+                        {/* Reordering Controls */}
+                        <div className="flex gap-1 bg-gray-50 border rounded-lg p-0.5">
+                          <button
+                            type="button"
+                            disabled={pIdx === 0}
+                            onClick={() => handleReorderProject(p.id, 'up')}
+                            className="p-1 hover:bg-gray-200 rounded text-gray-500 disabled:opacity-25 text-[9px]"
+                            title="تحريك لأعلى"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            disabled={pIdx === arr.length - 1}
+                            onClick={() => handleReorderProject(p.id, 'down')}
+                            className="p-1 hover:bg-gray-200 rounded text-gray-500 disabled:opacity-25 text-[9px]"
+                            title="تحريك لأسفل"
+                          >
+                            ▼
+                          </button>
+                        </div>
+                        <span>مساحة: <strong>{p.area}</strong></span>
+                      </div>
+                      <div className="flex gap-1">
+                        <button onClick={() => handleOpenEditProject(p)} className="p-1.5 hover:bg-[#d4af37]/10 rounded text-gray-400 hover:text-[#d4af37]" title="تعديل"><Edit2 className="w-4 h-4" /></button>
+                        <button onClick={() => { if(window.confirm('حذف هذا المشروع؟')) deleteProject(p.id); }} className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-600" title="حذف"><Trash2 className="w-4 h-4" /></button>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex justify-between items-center text-[10px] border-t border-gray-100 pt-3">
-                    <span>مساحة: <strong>{p.area}</strong></span>
-                    <div className="flex gap-1">
-                      <button onClick={() => handleOpenEditProject(p)} className="p-1.5 hover:bg-[#d4af37]/10 rounded text-gray-400 hover:text-[#d4af37]"><Edit2 className="w-4 h-4" /></button>
-                      <button onClick={() => { if(window.confirm('حذف هذا المشروع؟')) deleteProject(p.id); }} className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                ))}
             </div>
           </div>
         )}
@@ -1459,6 +1663,344 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 >
                   تأكيد رفض الطلب نهائياً
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ==================== MODAL: PROJECT ADD/EDIT OVERLAY ==================== */}
+      <AnimatePresence>
+        {showProjectForm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 15 }}
+              className="bg-white w-full max-w-4xl rounded-3xl border border-gray-100 shadow-2xl overflow-hidden relative max-h-[92vh] flex flex-col text-right"
+            >
+              {/* Modal Header */}
+              <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                <button
+                  type="button"
+                  onClick={resetProjectForm}
+                  className="p-1.5 hover:bg-gray-200 rounded-full text-gray-500 cursor-pointer transition-all"
+                  title="إغلاق"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <h3 className="text-sm font-black text-gray-900 border-r-2 border-[#d4af37] pr-2.5">
+                  {editingProject ? `تعديل مشروع: ${editingProject.title}` : 'تفاصيل المشروع الملكي الجديد'}
+                </h3>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 md:p-8 overflow-y-auto space-y-6 flex-1 text-xs">
+                <form onSubmit={handleSaveProject} className="space-y-6">
+                  {/* Basic text specs */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-1.5">
+                      <label className="font-extrabold text-gray-700">عنوان المشروع (اسم المشروع) *</label>
+                      <input
+                        type="text"
+                        required
+                        value={projTitle}
+                        onChange={(e) => setProjTitle(e.target.value)}
+                        placeholder="أدخل اسماً فريداً ومعبراً للمشروع"
+                        className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:bg-white"
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="font-extrabold text-gray-700">القسم / التصنيف *</label>
+                        <select
+                          value={projCategory}
+                          onChange={(e) => setProjCategory(e.target.value)}
+                          className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl font-bold text-xs"
+                        >
+                          <option value="غرف نوم">غرف نوم (Bedrooms)</option>
+                          <option value="مطابخ">مطابخ (Kitchens)</option>
+                          <option value="غرف ملابس">غرف ملابس (Dressing)</option>
+                          <option value="ديكورات خشبية">ديكورات خشبية (Wood)</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="font-extrabold text-gray-700">تثبيت بالرئيسية</label>
+                        <div className="flex items-center h-[46px] pr-2">
+                          <input
+                            type="checkbox"
+                            checked={projFeatured}
+                            onChange={(e) => setProjFeatured(e.target.checked)}
+                            className="w-4 h-4 rounded text-[#d4af37] focus:ring-[#d4af37]"
+                          />
+                          <span className="text-xs font-bold text-gray-700 mr-2">مشروع مميز (Featured)</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-1.5">
+                      <label className="font-extrabold text-gray-700">مساحة المشروع الإجمالية *</label>
+                      <input
+                        type="text"
+                        required
+                        value={projArea}
+                        onChange={(e) => setProjArea(e.target.value)}
+                        placeholder="مثال: 120 م² أو 5×4 م"
+                        className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="font-extrabold text-gray-700">المدينة والموقع *</label>
+                      <input
+                        type="text"
+                        required
+                        value={projCity}
+                        onChange={(e) => setProjCity(e.target.value)}
+                        placeholder="مثال: بغداد - حي المنصور"
+                        className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-extrabold text-gray-700">الوصف الهندسي والتفاصيل الفنية *</label>
+                    <textarea
+                      rows={4}
+                      required
+                      value={projDesc}
+                      onChange={(e) => setProjDesc(e.target.value)}
+                      placeholder="صفحة تفاصيل المشروع: يرجى كتابة تفاصيل الأخشاب المستخدمة، الخامات والمواصفات الكاملة..."
+                      className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl resize-none outline-none focus:bg-white leading-relaxed"
+                    />
+                  </div>
+
+                  {/* Primary Cover Upload and Preview */}
+                  <div className="space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-150">
+                    <label className="font-extrabold text-xs text-gray-700 block">الصورة الرئيسية للمشروع (Cover Image) *</label>
+                    {(projCoverFile || projCoverUrl) && (
+                      <div className="w-full h-40 rounded-xl overflow-hidden bg-black/5 relative border border-gray-200 shadow-inner mb-3">
+                        <img
+                          src={projCoverFile ? URL.createObjectURL(projCoverFile) : projCoverUrl}
+                          className="w-full h-full object-cover"
+                          alt="Cover Preview"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => { setProjCoverFile(null); setProjCoverUrl(''); }}
+                          className="absolute top-2 left-2 px-2 py-1 bg-red-600/95 text-white rounded-lg text-[10px] font-bold"
+                        >
+                          إزالة الصورة
+                        </button>
+                      </div>
+                    )}
+                    <div className="flex flex-col gap-2">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        id="cover-upload-btn"
+                        onChange={(e) => e.target.files && setProjCoverFile(e.target.files[0])}
+                        className="hidden"
+                      />
+                      <label
+                        htmlFor="cover-upload-btn"
+                        className="px-4 py-2.5 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-xl text-xs font-bold text-center cursor-pointer flex items-center justify-center gap-1.5 transition-all"
+                      >
+                        <ImageIcon className="w-4 h-4 text-[#d4af37]" />
+                        رفع صورة من الجهاز (إلى Storage)
+                      </label>
+                      <div className="text-center text-[10px] text-gray-400 font-bold">- أو ضع رابط صورة مباشر -</div>
+                      <input
+                        type="text"
+                        value={projCoverUrl}
+                        onChange={(e) => setProjCoverUrl(e.target.value)}
+                        placeholder="https://example.com/cover.jpg"
+                        className="w-full p-2.5 bg-white border border-gray-200 rounded-xl text-xs text-left font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Before and After Comparers */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {/* Before Image Upload */}
+                    <div className="space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-150">
+                      <label className="font-extrabold text-xs text-red-700 block">صورة قبل العمل والتنفيذ (Before) - اختياري</label>
+                      {(projBeforeFile || projBeforeUrl) && (
+                        <div className="w-full h-36 rounded-xl overflow-hidden bg-black/5 relative border border-gray-200 shadow-inner mb-3">
+                          <img
+                            src={projBeforeFile ? URL.createObjectURL(projBeforeFile) : projBeforeUrl}
+                            className="w-full h-full object-cover"
+                            alt="Before Preview"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => { setProjBeforeFile(null); setProjBeforeUrl(''); }}
+                            className="absolute top-2 left-2 px-2 py-1 bg-red-600/95 text-white rounded-lg text-[10px] font-bold"
+                          >
+                            إزالة
+                          </button>
+                        </div>
+                      )}
+                      <div className="flex flex-col gap-2">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          id="before-upload-btn"
+                          onChange={(e) => e.target.files && setProjBeforeFile(e.target.files[0])}
+                          className="hidden"
+                        />
+                        <label
+                          htmlFor="before-upload-btn"
+                          className="px-3 py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-xl text-xs font-bold text-center cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <ImageIcon className="w-4 h-4 text-red-500" />
+                          رفع صورة قبل التنفيذ
+                        </label>
+                        <input
+                          type="text"
+                          value={projBeforeUrl}
+                          onChange={(e) => setProjBeforeUrl(e.target.value)}
+                          placeholder="أو رابط الصورة..."
+                          className="w-full p-2 bg-white border border-gray-200 rounded-xl text-[11px] text-left font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    {/* After Image Upload */}
+                    <div className="space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-150">
+                      <label className="font-extrabold text-xs text-[#d4af37] block">صورة بعد العمل والتنفيذ (After) - اختياري</label>
+                      {(projAfterFile || projAfterUrl) && (
+                        <div className="w-full h-36 rounded-xl overflow-hidden bg-black/5 relative border border-gray-200 shadow-inner mb-3">
+                          <img
+                            src={projAfterFile ? URL.createObjectURL(projAfterFile) : projAfterUrl}
+                            className="w-full h-full object-cover"
+                            alt="After Preview"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => { setProjAfterFile(null); setProjAfterUrl(''); }}
+                            className="absolute top-2 left-2 px-2 py-1 bg-red-600/95 text-white rounded-lg text-[10px] font-bold"
+                          >
+                            إزالة
+                          </button>
+                        </div>
+                      )}
+                      <div className="flex flex-col gap-2">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          id="after-upload-btn"
+                          onChange={(e) => e.target.files && setProjAfterFile(e.target.files[0])}
+                          className="hidden"
+                        />
+                        <label
+                          htmlFor="after-upload-btn"
+                          className="px-3 py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-xl text-xs font-bold text-center cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <ImageIcon className="w-4 h-4 text-[#d4af37]" />
+                          رفع صورة بعد التنفيذ
+                        </label>
+                        <input
+                          type="text"
+                          value={projAfterUrl}
+                          onChange={(e) => setProjAfterUrl(e.target.value)}
+                          placeholder="أو رابط الصورة..."
+                          className="w-full p-2 bg-white border border-gray-200 rounded-xl text-[11px] text-left font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Multi Gallery Upload */}
+                  <div className="space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-150">
+                    <label className="font-extrabold text-xs text-gray-700 block">معرض صور إضافية للمشروع (Gallery Images) *</label>
+                    {projGalleryUrls.length > 0 && (
+                      <div className="flex flex-wrap gap-2.5 p-3 bg-white border border-gray-200 rounded-xl mb-3">
+                        {projGalleryUrls.map((url, i) => (
+                          <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-150 group shadow-sm bg-gray-50">
+                            <img src={url} className="w-full h-full object-cover" alt="Gallery preview" />
+                            <button
+                              type="button"
+                              onClick={() => setProjGalleryUrls(prev => prev.filter((_, idx) => idx !== i))}
+                              className="absolute inset-0 bg-red-600/90 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center font-bold text-[10px] transition-all"
+                            >
+                              إزالة
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Drag-drop or click box */}
+                      <div>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          id="gallery-upload-btn"
+                          onChange={handleGalleryUpload}
+                          className="hidden"
+                        />
+                        <label
+                          htmlFor="gallery-upload-btn"
+                          className="h-[95px] px-4 bg-white border border-dashed border-gray-300 text-gray-600 hover:bg-gray-50 rounded-xl text-xs font-bold text-center cursor-pointer flex flex-col items-center justify-center gap-1.5 transition-all"
+                        >
+                          <Plus className="w-5 h-5 text-[#d4af37]" />
+                          <span>رفع صور متعددة من الجهاز</span>
+                          <span className="text-[10px] text-gray-400 font-normal">يمكن اختيار صور متعددة معاً</span>
+                        </label>
+                      </div>
+
+                      {/* Direct add link helper */}
+                      <div className="space-y-1.5 flex flex-col justify-center">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            id="addGalInputModal"
+                            placeholder="أو ضع رابط صورة مباشرة..."
+                            className="flex-1 p-2.5 bg-white border border-gray-200 rounded-xl text-xs outline-none font-mono text-left"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const inp = document.getElementById('addGalInputModal') as HTMLInputElement;
+                              if(inp && inp.value.trim()) {
+                                setProjGalleryUrls(p => [...p, inp.value.trim()]);
+                                inp.value = '';
+                              }
+                            }}
+                            className="px-4 py-2 bg-[#171714] text-[#d4af37] rounded-xl font-bold text-xs"
+                          >
+                            إضافة
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-gray-400">سيتم حفظ معرض الصور نهائياً عند حفظ المشروع بالكامل.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Submission and Close buttons */}
+                  <div className="flex justify-end gap-3 pt-5 border-t border-gray-150 bg-gray-50/50 p-4 -mx-8 -mb-8 rounded-b-3xl">
+                    <button
+                      type="button"
+                      onClick={resetProjectForm}
+                      className="px-5 py-2.5 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-xl text-xs font-bold"
+                    >
+                      إلغاء التعديل
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={globalLoading}
+                      className="px-8 py-2.5 bg-[#171714] text-[#d4af37] hover:bg-black rounded-xl text-xs font-bold disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      {globalLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      <span>{editingProject ? 'تحديث وتأكيد التغييرات' : 'حفظ المشروع ونشره بالمعرض'}</span>
+                    </button>
+                  </div>
+                </form>
               </div>
             </motion.div>
           </div>

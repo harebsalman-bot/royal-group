@@ -534,9 +534,47 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   /**
+   * Helper to delete a file from Firebase Storage using its download URL
+   */
+  const deleteStorageFileByUrl = async (url: string) => {
+    if (url && url.includes('firebasestorage.googleapis.com')) {
+      try {
+        const storage = getStorage();
+        const fileRef = ref(storage, url);
+        await deleteObject(fileRef);
+        console.log(`Successfully deleted storage file: ${url}`);
+      } catch (err) {
+        console.warn(`Failed to delete storage file: ${url}`, err);
+      }
+    }
+  };
+
+  /**
    * Delete project
    */
   const deleteProject = async (id: string) => {
+    // Clean up associated storage images first
+    const targetProject = projects.find(p => p.id === id);
+    if (targetProject) {
+      const urlsToDelete: string[] = [];
+      if (targetProject.coverImage) urlsToDelete.push(targetProject.coverImage);
+      if (targetProject.beforeImage) urlsToDelete.push(targetProject.beforeImage);
+      if (targetProject.afterImage) urlsToDelete.push(targetProject.afterImage);
+      if (Array.isArray(targetProject.images)) {
+        targetProject.images.forEach(img => {
+          if (img !== targetProject.coverImage) {
+            urlsToDelete.push(img);
+          }
+        });
+      }
+
+      try {
+        await Promise.all(urlsToDelete.map(url => deleteStorageFileByUrl(url)));
+      } catch (e) {
+        console.warn("Error deleting files from Storage during project delete:", e);
+      }
+    }
+
     if (isFirebaseConnected) {
       try {
         const db = getDb();

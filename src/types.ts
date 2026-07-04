@@ -16,6 +16,7 @@ export interface Project {
   category: string; // e.g., 'مطابخ', 'غرف نوم', etc.
   featured: boolean;
   createdAt: number;
+  orderIndex?: number;
 }
 
 export interface Category {
