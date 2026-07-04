@@ -1,0 +1,155 @@
+{
+  "entities": {
+    "Project": {
+      "title": "Project",
+      "description": "An interior design project completed by Royal Group",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "area": { "type": "string" },
+        "city": { "type": "string" },
+        "coverImage": { "type": "string" },
+        "images": { "type": "array" },
+        "beforeImage": { "type": "string" },
+        "afterImage": { "type": "string" },
+        "category": { "type": "string" },
+        "featured": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "title", "description", "area", "city", "coverImage", "category", "featured", "createdAt"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Category for interior design classification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "slug": { "type": "string" }
+      },
+      "required": ["id", "name", "slug"]
+    },
+    "ColorVariant": {
+      "title": "ColorVariant",
+      "description": "A customized color variation for the real-time color lab",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["wood", "marble", "wall", "flooring"] },
+        "colorValue": { "type": "string" },
+        "image": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "name", "type", "colorValue", "image", "createdAt"]
+    },
+    "DesignRequest": {
+      "title": "DesignRequest",
+      "description": "A design inquiry sent by a client",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "city": { "type": "string" },
+        "projectType": { "type": "string" },
+        "area": { "type": "string" },
+        "budget": { "type": "string" },
+        "plansUrl": { "type": "array" },
+        "imageUrl": { "type": "array" },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "completed"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "name", "phone", "city", "projectType", "area", "budget", "status", "createdAt"]
+    },
+    "CompanySettings": {
+      "title": "CompanySettings",
+      "description": "Official contact details and settings for Royal Group",
+      "type": "object",
+      "properties": {
+        "address": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "aboutText": { "type": "string" },
+        "aboutImage": { "type": "string" }
+      },
+      "required": ["address", "phone", "whatsapp", "aboutText"]
+    },
+    "SocialLinks": {
+      "title": "SocialLinks",
+      "description": "Editable social links for Royal Group",
+      "type": "object",
+      "properties": {
+        "instagram": { "type": "string" },
+        "facebook": { "type": "string" },
+        "tiktok": { "type": "string" },
+        "youtube": { "type": "string" }
+      },
+      "required": ["instagram", "facebook", "tiktok", "youtube"]
+    },
+    "BedroomOption": {
+      "title": "BedroomOption",
+      "description": "An option for bedroom design components",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "section": { "type": "string" },
+        "name": { "type": "string" },
+        "image": { "type": "string" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "section", "name", "image", "createdAt"]
+    },
+    "BedroomSubmission": {
+      "title": "BedroomSubmission",
+      "description": "A luxury bedroom questionnaire submission",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "selections": { "type": "object" },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "completed"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "clientName", "clientPhone", "selections", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Collection of luxurious interior projects"
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Collection of project categories"
+    },
+    "/colorVariants/{variantId}": {
+      "schema": "ColorVariant",
+      "description": "Available color combinations for interactive laboratory"
+    },
+    "/designRequests/{requestId}": {
+      "schema": "DesignRequest",
+      "description": "Design requests submitted by prospective clients"
+    },
+    "/companySettings/{settingId}": {
+      "schema": "CompanySettings",
+      "description": "Company settings document (singleton like 'main')"
+    },
+    "/socialLinks/{linkId}": {
+      "schema": "SocialLinks",
+      "description": "Social links document (singleton like 'main')"
+    },
+    "/bedroomOptions/{optionId}": {
+      "schema": "BedroomOption",
+      "description": "Luxury bedroom design options managed by Admin"
+    },
+    "/bedroomSubmissions/{submissionId}": {
+      "schema": "BedroomSubmission",
+      "description": "Bedroom custom questionnaire selections submitted by customers"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "Royal Group",
+  "description": "الموقع الرسمي الفاخر لشركة Royal Group للتصميم الداخلي والتنفيذ مع لوحة تحكم لإدارة المشاريع، الطلبات، الألوان، والسوشيال ميديا.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

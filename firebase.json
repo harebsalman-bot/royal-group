@@ -1,0 +1,8 @@
+{
+  "firestore": [
+    {
+      "database": "ai-studio-royalgroup-9ad9c5e1-ff84-4044-be12-d1feb03a7592",
+      "rules": "firestore.rules"
+    }
+  ]
+}
