@@ -6,13 +6,10 @@
 import { Project, Category, ColorVariant, CompanySettings, SocialLinks } from '../types';
 
 export const mockCategories: Category[] = [
-  { id: '1', name: 'صالات', slug: 'living-rooms' },
+  { id: '1', name: 'غرف نوم', slug: 'bedrooms' },
   { id: '2', name: 'مطابخ', slug: 'kitchens' },
-  { id: '3', name: 'غرف نوم', slug: 'bedrooms' },
-  { id: '4', name: 'غرف ملابس', slug: 'dressing-rooms' },
-  { id: '5', name: 'حمامات', slug: 'bathrooms' },
-  { id: '6', name: 'غرف غسيل', slug: 'laundry-rooms' },
-  { id: '7', name: 'غرف أطفال', slug: 'kids-rooms' }
+  { id: '3', name: 'غرف ملابس', slug: 'dressing-rooms' },
+  { id: '4', name: 'ديكورات خشبية', slug: 'wood-decorations' }
 ];
 
 export const mockCompanySettings: CompanySettings = {
@@ -45,7 +42,7 @@ export const mockProjects: Project[] = [
     ],
     beforeImage: "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000",
     afterImage: "https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=1000",
-    category: "صالات",
+    category: "ديكورات خشبية",
     featured: true,
     createdAt: 1719878400000 // 2026-07-02
   },
@@ -115,7 +112,7 @@ export const mockProjects: Project[] = [
     ],
     beforeImage: "https://images.unsplash.com/photo-1584622781564-1d987f7333c1?q=80&w=1000",
     afterImage: "https://images.unsplash.com/photo-1604014237800-1c9102c219da?q=80&w=1000",
-    category: "حمامات",
+    category: "ديكورات خشبية",
     featured: false,
     createdAt: 1719532800000
   },
@@ -131,7 +128,7 @@ export const mockProjects: Project[] = [
     ],
     beforeImage: "https://images.unsplash.com/photo-1560185007-c5ca9d2c014d?q=80&w=1000",
     afterImage: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?q=80&w=1000",
-    category: "غرف غسيل",
+    category: "غرف ملابس",
     featured: false,
     createdAt: 1719446400000
   }

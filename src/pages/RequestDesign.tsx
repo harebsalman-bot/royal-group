@@ -15,7 +15,7 @@ export const RequestDesign: React.FC = () => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [city, setCity] = useState('بغداد');
-  const [projectType, setProjectType] = useState('فيلا كاملة');
+  const [projectType, setProjectType] = useState('غرف نوم');
   const [area, setArea] = useState('');
   const [budget, setBudget] = useState('');
   
@@ -190,14 +190,10 @@ export const RequestDesign: React.FC = () => {
                         onChange={(e) => setProjectType(e.target.value)}
                         className="w-full p-3 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:border-[#d4af37] focus:bg-white outline-none transition-all text-gray-900 font-bold"
                       >
-                        <option>فيلا كاملة</option>
-                        <option>شقة سكنية</option>
-                        <option>مطبخ</option>
-                        <option>غرفة نوم</option>
-                        <option>غرفة ملابس</option>
-                        <option>صالون / مجلس استقبال</option>
-                        <option>حمام فاخر</option>
-                        <option>مكتب تجاري</option>
+                        <option>غرف نوم</option>
+                        <option>مطابخ</option>
+                        <option>غرف ملابس</option>
+                        <option>ديكورات خشبية</option>
                       </select>
                     </div>
 

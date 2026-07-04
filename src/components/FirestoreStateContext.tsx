@@ -5,7 +5,8 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
-  Project, Category, ColorVariant, DesignRequest, CompanySettings, SocialLinks, BedroomOption, BedroomSubmission
+  Project, Category, ColorVariant, DesignRequest, CompanySettings, SocialLinks, BedroomOption, BedroomSubmission,
+  RequestStatus, RejectionReason
 } from '../types';
 import { 
   mockProjects, mockCategories, mockColorVariants, mockCompanySettings, mockSocialLinks 
@@ -163,7 +164,7 @@ interface FirebaseStateContextType {
   updateProject: (id: string, proj: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   addDesignRequest: (req: Omit<DesignRequest, 'id' | 'status' | 'createdAt'>, planFiles: File[], imageFiles: File[]) => Promise<void>;
-  updateDesignRequestStatus: (id: string, status: 'pending' | 'reviewed' | 'completed') => Promise<void>;
+  updateDesignRequestStatus: (id: string, status: RequestStatus, additionalFields?: Partial<DesignRequest>) => Promise<void>;
   updateCompanySettings: (settings: CompanySettings) => Promise<void>;
   updateSocialLinks: (links: SocialLinks) => Promise<void>;
   addColorVariant: (variant: Omit<ColorVariant, 'id' | 'createdAt'>) => Promise<void>;
@@ -173,7 +174,7 @@ interface FirebaseStateContextType {
   updateBedroomOption: (id: string, option: Partial<BedroomOption>) => Promise<void>;
   deleteBedroomOption: (id: string) => Promise<void>;
   addBedroomSubmission: (sub: Omit<BedroomSubmission, 'id' | 'createdAt' | 'status'>) => Promise<void>;
-  updateBedroomSubmissionStatus: (id: string, status: 'pending' | 'reviewed' | 'completed') => Promise<void>;
+  updateBedroomSubmissionStatus: (id: string, status: RequestStatus, additionalFields?: Partial<BedroomSubmission>) => Promise<void>;
   deleteBedroomSubmission: (id: string) => Promise<void>;
 }
 
@@ -497,6 +498,52 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  // Helper to generate a unique request number dynamically
+  const generateRequestNumber = async (): Promise<string> => {
+    let maxNum = 0;
+    if (isFirebaseConnected) {
+      try {
+        const db = getDb();
+        const rSnap = await getDocs(collection(db, 'designRequests'));
+        const sSnap = await getDocs(collection(db, 'bedroomSubmissions'));
+        
+        rSnap.forEach(docSnap => {
+          const data = docSnap.data();
+          if (data.requestNumber && data.requestNumber.startsWith('RG-')) {
+            const num = parseInt(data.requestNumber.replace('RG-', ''), 10);
+            if (!isNaN(num) && num > maxNum) maxNum = num;
+          }
+        });
+        
+        sSnap.forEach(docSnap => {
+          const data = docSnap.data();
+          if (data.requestNumber && data.requestNumber.startsWith('RG-')) {
+            const num = parseInt(data.requestNumber.replace('RG-', ''), 10);
+            if (!isNaN(num) && num > maxNum) maxNum = num;
+          }
+        });
+      } catch (e) {
+        console.error("Error generating unique request number from Firestore:", e);
+      }
+    }
+    
+    // Fallback/Demo check in local state
+    designRequests.forEach(r => {
+      if (r.requestNumber && r.requestNumber.startsWith('RG-')) {
+        const num = parseInt(r.requestNumber.replace('RG-', ''), 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
+    });
+    bedroomSubmissions.forEach(s => {
+      if (s.requestNumber && s.requestNumber.startsWith('RG-')) {
+        const num = parseInt(s.requestNumber.replace('RG-', ''), 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
+    });
+    
+    return `RG-${String(maxNum + 1).padStart(6, '0')}`;
+  };
+
   /**
    * Submit client design requests
    */
@@ -506,6 +553,7 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     imageFiles: File[]
   ) => {
     const newId = `req_${Date.now()}`;
+    const reqNum = await generateRequestNumber();
     
     // Upload files synchronously to get URLs
     const plansUrl: string[] = [];
@@ -525,7 +573,9 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       id: newId,
       plansUrl,
       imageUrl,
-      status: 'pending',
+      status: 'New',
+      requestNumber: reqNum,
+      viewed: false,
       createdAt: Date.now()
     };
 
@@ -545,17 +595,18 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   /**
    * Update Request Status
    */
-  const updateDesignRequestStatus = async (id: string, status: 'pending' | 'reviewed' | 'completed') => {
+  const updateDesignRequestStatus = async (id: string, status: RequestStatus, additionalFields?: Partial<DesignRequest>) => {
+    const updates = { status, ...additionalFields };
     if (isFirebaseConnected) {
       try {
         const db = getDb();
-        await updateDoc(doc(db, 'designRequests', id), { status });
+        await updateDoc(doc(db, 'designRequests', id), updates);
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, `designRequests/${id}`);
       }
     } else {
       // Demo State
-      setDesignRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+      setDesignRequests(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
     }
   };
 
@@ -696,10 +747,13 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
    */
   const addBedroomSubmission = async (sub: Omit<BedroomSubmission, 'id' | 'createdAt' | 'status'>) => {
     const newId = `sub_${Date.now()}`;
+    const reqNum = await generateRequestNumber();
     const newSubmission: BedroomSubmission = {
       ...sub,
       id: newId,
-      status: 'pending',
+      status: 'New',
+      requestNumber: reqNum,
+      viewed: false,
       createdAt: Date.now()
     };
 
@@ -718,16 +772,17 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   /**
    * Bedroom Designer: Update submission status (Admin)
    */
-  const updateBedroomSubmissionStatus = async (id: string, status: 'pending' | 'reviewed' | 'completed') => {
+  const updateBedroomSubmissionStatus = async (id: string, status: RequestStatus, additionalFields?: Partial<BedroomSubmission>) => {
+    const updates = { status, ...additionalFields };
     if (isFirebaseConnected) {
       try {
         const db = getDb();
-        await updateDoc(doc(db, 'bedroomSubmissions', id), { status });
+        await updateDoc(doc(db, 'bedroomSubmissions', id), updates);
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, `bedroomSubmissions/${id}`);
       }
     } else {
-      setBedroomSubmissions(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+      setBedroomSubmissions(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
     }
   };
 

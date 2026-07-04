@@ -25,6 +25,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenS
     { id: 'color-lab', label: 'تجربة الألوان' },
     { id: 'services', label: 'الخدمات' },
     { id: 'request', label: 'طلب تصميم' },
+    { id: 'track', label: 'تتبع طلبي' },
     { id: 'contact', label: 'تواصل معنا' }
   ];
 

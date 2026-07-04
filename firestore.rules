@@ -38,7 +38,10 @@ service cloud.firestore {
              data.coverImage is string && data.coverImage.size() <= 1500 &&
              data.category is string && data.category.size() <= 100 &&
              data.featured is bool &&
-             data.createdAt is int;
+             data.createdAt is int &&
+             (!('beforeImage' in data) || data.beforeImage is string) &&
+             (!('afterImage' in data) || data.afterImage is string) &&
+             (!('images' in data) || data.images is list);
     }
 
     function isValidProjectImage(data) {
@@ -67,8 +70,19 @@ service cloud.firestore {
              data.projectType is string && data.projectType.size() <= 100 &&
              data.area is string && data.area.size() <= 50 &&
              data.budget is string && data.budget.size() <= 50 &&
-             data.status is string && (data.status == 'pending' || data.status == 'reviewed' || data.status == 'completed') &&
-             data.createdAt is int;
+             data.status is string && (
+               data.status == 'New' || data.status == 'Under Review' || data.status == 'Contacted' ||
+               data.status == 'Approved' || data.status == 'In Progress' || data.status == 'Completed' ||
+               data.status == 'Rejected' || data.status == 'pending' || data.status == 'reviewed'
+             ) &&
+             data.createdAt is int &&
+             (!('requestNumber' in data) || data.requestNumber is string) &&
+             (!('viewed' in data) || data.viewed is bool) &&
+             (!('adminNotes' in data) || data.adminNotes is string) &&
+             (!('rejectionReason' in data) || data.rejectionReason is string) &&
+             (!('rejectionNotes' in data) || data.rejectionNotes is string) &&
+             (!('plansUrl' in data) || data.plansUrl is list) &&
+             (!('imageUrl' in data) || data.imageUrl is list);
     }
 
     function isValidCompanySettings(data) {
@@ -94,15 +108,25 @@ service cloud.firestore {
              ) &&
              data.name is string && data.name.size() <= 200 &&
              data.image is string && data.image.size() <= 1500 &&
-             data.createdAt is int;
+             data.createdAt is int &&
+             (!('description' in data) || data.description is string);
     }
 
     function isValidBedroomSubmission(data) {
       return data.clientName is string && data.clientName.size() <= 150 &&
              data.clientPhone is string && data.clientPhone.size() <= 50 &&
              data.selections is map &&
-             data.status is string && (data.status == 'pending' || data.status == 'reviewed' || data.status == 'completed') &&
-             data.createdAt is int;
+             data.status is string && (
+               data.status == 'New' || data.status == 'Under Review' || data.status == 'Contacted' ||
+               data.status == 'Approved' || data.status == 'In Progress' || data.status == 'Completed' ||
+               data.status == 'Rejected' || data.status == 'pending' || data.status == 'reviewed'
+             ) &&
+             data.createdAt is int &&
+             (!('requestNumber' in data) || data.requestNumber is string) &&
+             (!('viewed' in data) || data.viewed is bool) &&
+             (!('adminNotes' in data) || data.adminNotes is string) &&
+             (!('rejectionReason' in data) || data.rejectionReason is string) &&
+             (!('rejectionNotes' in data) || data.rejectionNotes is string);
     }
 
 

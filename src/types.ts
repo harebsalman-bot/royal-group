@@ -33,6 +33,10 @@ export interface ColorVariant {
   createdAt: number;
 }
 
+export type RequestStatus = 'New' | 'Under Review' | 'Contacted' | 'Approved' | 'In Progress' | 'Completed' | 'Rejected' | 'pending' | 'reviewed';
+
+export type RejectionReason = 'Outside our scope' | 'Missing project information' | 'Schedule fully booked' | 'Budget mismatch' | 'Other';
+
 export interface DesignRequest {
   id: string;
   name: string;
@@ -43,8 +47,13 @@ export interface DesignRequest {
   budget: string;
   plansUrl?: string[];
   imageUrl?: string[];
-  status: 'pending' | 'reviewed' | 'completed';
+  status: RequestStatus;
   createdAt: number;
+  requestNumber?: string;
+  rejectionReason?: RejectionReason;
+  rejectionNotes?: string;
+  adminNotes?: string;
+  viewed?: boolean;
 }
 
 export interface CompanySettings {
@@ -89,6 +98,11 @@ export interface BedroomSubmission {
       image: string;
     };
   };
-  status: 'pending' | 'reviewed' | 'completed';
+  status: RequestStatus;
   createdAt: number;
+  requestNumber?: string;
+  rejectionReason?: RejectionReason;
+  rejectionNotes?: string;
+  adminNotes?: string;
+  viewed?: boolean;
 }

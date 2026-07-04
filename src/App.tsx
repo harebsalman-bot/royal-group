@@ -16,6 +16,7 @@ import { ColorLab } from './components/ColorLab';
 import { Services } from './pages/Services';
 import { RequestDesign } from './pages/RequestDesign';
 import { Contact } from './pages/Contact';
+import { TrackRequest } from './pages/TrackRequest';
 import { AdminLogin } from './pages/AdminLogin';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { MessageSquare, Phone, Sparkles } from 'lucide-react';
@@ -46,6 +47,8 @@ export default function App() {
         return <Services />;
       case 'request':
         return <RequestDesign />;
+      case 'track':
+        return <TrackRequest />;
       case 'contact':
         return <Contact />;
       case 'admin':
