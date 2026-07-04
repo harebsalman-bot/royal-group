@@ -6,7 +6,6 @@
 import { initializeApp, getApps, getApp, FirebaseApp, deleteApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore, doc, getDocFromServer } from 'firebase/firestore';
-import { getStorage, FirebaseStorage } from 'firebase/storage';
 import firebaseConfigRaw from './firebase-applet-config.json';
 
 export enum OperationType {
@@ -38,7 +37,6 @@ export interface FirestoreErrorInfo {
 let firebaseApp: FirebaseApp | null = null;
 let dbInstance: Firestore | null = null;
 let authInstance: Auth | null = null;
-let storageInstance: FirebaseStorage | null = null;
 
 // Try loading configuration from environment variables first, then fallback to local JSON file
 const envConfig = {
@@ -85,7 +83,6 @@ if (isConfigValid) {
       ? getFirestore(firebaseApp, (activeConfig as any).firestoreDatabaseId)
       : getFirestore(firebaseApp);
     authInstance = getAuth(firebaseApp);
-    storageInstance = getStorage(firebaseApp);
   } catch (error) {
     console.error("Failed to initialize Firebase with config:", error);
   }
@@ -105,7 +102,6 @@ export function initializeDynamicFirebase(config: any): boolean {
       ? getFirestore(firebaseApp, config.firestoreDatabaseId)
       : getFirestore(firebaseApp);
     authInstance = getAuth(firebaseApp);
-    storageInstance = getStorage(firebaseApp);
     
     return true;
   } catch (error) {
@@ -191,13 +187,6 @@ export function getAuthService(): Auth {
     throw new Error("Firebase Auth is not initialized. Please configure Firebase.");
   }
   return authInstance;
-}
-
-export function getStorageService(): FirebaseStorage {
-  if (!storageInstance) {
-    throw new Error("Firebase Storage is not initialized. Please configure Firebase.");
-  }
-  return storageInstance;
 }
 
 export function isFirebaseReady(): boolean {

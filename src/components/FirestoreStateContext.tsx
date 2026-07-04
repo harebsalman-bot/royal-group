@@ -17,7 +17,6 @@ import {
 import { 
   collection, doc, getDocs, setDoc, updateDoc, deleteDoc, getDoc, query, orderBy, onSnapshot 
 } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
 export const seedBedroomOptions: Omit<BedroomOption, 'id' | 'createdAt'>[] = [
   {
@@ -455,40 +454,23 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   /**
-   * Universal file uploader: Uploads to Firebase Storage if connected, otherwise Base64 or Unsplash placeholders
+   * Universal file uploader: Converts to Base64 data URL directly to save into Firestore, preventing Firebase Storage failures.
    */
   const uploadFile = async (file: File, folder: 'projects' | 'before-after' | 'color-lab'): Promise<string> => {
-    if (isFirebaseConnected) {
-      try {
-        const storage = getStorage();
-        const uniqueName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-        const fileRef = ref(storage, `${folder}/${uniqueName}`);
-        const snapshot = await uploadBytes(fileRef, file);
-        return await getDownloadURL(snapshot.ref);
-      } catch (error) {
-        console.warn("Storage upload failed or is not configured. Falling back to local/Base64/Placeholder URL:", error);
-        
-        // If file is small, encode to Base64 to preserve custom user input
-        if (file.size < 250 * 1024) {
-          try {
-            return await fileToBase64(file);
-          } catch (e) {
-            console.error("Base64 fallback failed:", e);
-          }
-        }
-        
-        // Professional high-quality Unsplash interior/architecture designs matching Royal Group theme
-        if (folder === 'before-after') {
-          return "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80"; // Luxury modern villa living room
-        } else if (folder === 'color-lab') {
-          return "https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=1200&q=80"; // Luxury marble / interior design detail
-        } else {
-          return "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1200&q=80"; // Contemporary interior design
-        }
-      }
-    } else {
-      // In Demo Mode, encode file to Base64 to render immediately
+    try {
+      // Direct Base64 conversion - works perfectly on Spark plan with no Firebase Storage!
       return await fileToBase64(file);
+    } catch (error) {
+      console.warn("Base64 conversion failed. Falling back to high-quality Unsplash interior/architecture design:", error);
+      
+      // Professional high-quality Unsplash interior/architecture designs matching Royal Group theme
+      if (folder === 'before-after') {
+        return "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80"; // Luxury modern villa living room
+      } else if (folder === 'color-lab') {
+        return "https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=1200&q=80"; // Luxury marble / interior design detail
+      } else {
+        return "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1200&q=80"; // Contemporary interior design
+      }
     }
   };
 
@@ -537,16 +519,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
    * Helper to delete a file from Firebase Storage using its download URL
    */
   const deleteStorageFileByUrl = async (url: string) => {
-    if (url && url.includes('firebasestorage.googleapis.com')) {
-      try {
-        const storage = getStorage();
-        const fileRef = ref(storage, url);
-        await deleteObject(fileRef);
-        console.log(`Successfully deleted storage file: ${url}`);
-      } catch (err) {
-        console.warn(`Failed to delete storage file: ${url}`, err);
-      }
-    }
+    // No-op: Firebase Storage is not configured/available in this project.
+    console.log(`Bypassed deleting storage file: ${url}`);
   };
 
   /**

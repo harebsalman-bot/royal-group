@@ -289,10 +289,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       let beforeUrl = projBeforeUrl;
       let afterUrl = projAfterUrl;
 
-      if (projCoverFile) coverUrl = await uploadFile(projCoverFile, 'projects');
-      if (projBeforeFile) beforeUrl = await uploadFile(projBeforeFile, 'before-after');
-      if (projAfterFile) afterUrl = await uploadFile(projAfterFile, 'before-after');
-
       if (!coverUrl && !editingProject) {
         showFeedback('الرجاء اختيار صورة غلاف للمشروع.', 'error');
         setGlobalLoading(false);
@@ -1777,19 +1773,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     />
                   </div>
 
-                  {/* Primary Cover Upload and Preview */}
+                  {/* Primary Cover URL and Preview */}
                   <div className="space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-150">
-                    <label className="font-extrabold text-xs text-gray-700 block">الصورة الرئيسية للمشروع (Cover Image) *</label>
-                    {(projCoverFile || projCoverUrl) && (
+                    <label className="font-extrabold text-xs text-gray-700 block">رابط الصورة الرئيسية للمشروع (Cover Image URL) *</label>
+                    {projCoverUrl && (
                       <div className="w-full h-40 rounded-xl overflow-hidden bg-black/5 relative border border-gray-200 shadow-inner mb-3">
                         <img
-                          src={projCoverFile ? URL.createObjectURL(projCoverFile) : projCoverUrl}
+                          src={projCoverUrl}
                           className="w-full h-full object-cover"
                           alt="Cover Preview"
                         />
                         <button
                           type="button"
-                          onClick={() => { setProjCoverFile(null); setProjCoverUrl(''); }}
+                          onClick={() => setProjCoverUrl('')}
                           className="absolute top-2 left-2 px-2 py-1 bg-red-600/95 text-white rounded-lg text-[10px] font-bold"
                         >
                           إزالة الصورة
@@ -1798,45 +1794,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     )}
                     <div className="flex flex-col gap-2">
                       <input
-                        type="file"
-                        accept="image/*"
-                        id="cover-upload-btn"
-                        onChange={(e) => e.target.files && setProjCoverFile(e.target.files[0])}
-                        className="hidden"
-                      />
-                      <label
-                        htmlFor="cover-upload-btn"
-                        className="px-4 py-2.5 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-xl text-xs font-bold text-center cursor-pointer flex items-center justify-center gap-1.5 transition-all"
-                      >
-                        <ImageIcon className="w-4 h-4 text-[#d4af37]" />
-                        رفع صورة من الجهاز (إلى Storage)
-                      </label>
-                      <div className="text-center text-[10px] text-gray-400 font-bold">- أو ضع رابط صورة مباشر -</div>
-                      <input
                         type="text"
+                        required
                         value={projCoverUrl}
                         onChange={(e) => setProjCoverUrl(e.target.value)}
-                        placeholder="https://example.com/cover.jpg"
-                        className="w-full p-2.5 bg-white border border-gray-200 rounded-xl text-xs text-left font-mono"
+                        placeholder="ضع رابط صورة الغلاف المباشر هنا (مثال: https://example.com/cover.jpg)"
+                        className="w-full p-3 bg-white border border-gray-200 rounded-xl text-xs text-left font-mono outline-none focus:border-[#d4af37]"
                       />
+                      <p className="text-[10px] text-gray-400">ملاحظة: يدعم روابط الصور من أي موقع أو خادم مباشر.</p>
                     </div>
                   </div>
 
-                  {/* Before and After Comparers */}
+                  {/* Before and After Comparers (URLs only) */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    {/* Before Image Upload */}
+                    {/* Before Image URL */}
                     <div className="space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-150">
-                      <label className="font-extrabold text-xs text-red-700 block">صورة قبل العمل والتنفيذ (Before) - اختياري</label>
-                      {(projBeforeFile || projBeforeUrl) && (
+                      <label className="font-extrabold text-xs text-red-700 block font-sans">رابط صورة قبل العمل والتنفيذ (Before Image URL) - اختياري</label>
+                      {projBeforeUrl && (
                         <div className="w-full h-36 rounded-xl overflow-hidden bg-black/5 relative border border-gray-200 shadow-inner mb-3">
                           <img
-                            src={projBeforeFile ? URL.createObjectURL(projBeforeFile) : projBeforeUrl}
+                            src={projBeforeUrl}
                             className="w-full h-full object-cover"
                             alt="Before Preview"
                           />
                           <button
                             type="button"
-                            onClick={() => { setProjBeforeFile(null); setProjBeforeUrl(''); }}
+                            onClick={() => setProjBeforeUrl('')}
                             className="absolute top-2 left-2 px-2 py-1 bg-red-600/95 text-white rounded-lg text-[10px] font-bold"
                           >
                             إزالة
@@ -1845,42 +1828,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       )}
                       <div className="flex flex-col gap-2">
                         <input
-                          type="file"
-                          accept="image/*"
-                          id="before-upload-btn"
-                          onChange={(e) => e.target.files && setProjBeforeFile(e.target.files[0])}
-                          className="hidden"
-                        />
-                        <label
-                          htmlFor="before-upload-btn"
-                          className="px-3 py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-xl text-xs font-bold text-center cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                          <ImageIcon className="w-4 h-4 text-red-500" />
-                          رفع صورة قبل التنفيذ
-                        </label>
-                        <input
                           type="text"
                           value={projBeforeUrl}
                           onChange={(e) => setProjBeforeUrl(e.target.value)}
-                          placeholder="أو رابط الصورة..."
-                          className="w-full p-2 bg-white border border-gray-200 rounded-xl text-[11px] text-left font-mono"
+                          placeholder="رابط صورة قبل التنفيذ (اختياري)..."
+                          className="w-full p-2.5 bg-white border border-gray-200 rounded-xl text-[11px] text-left font-mono outline-none focus:border-red-500"
                         />
                       </div>
                     </div>
 
-                    {/* After Image Upload */}
+                    {/* After Image URL */}
                     <div className="space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-150">
-                      <label className="font-extrabold text-xs text-[#d4af37] block">صورة بعد العمل والتنفيذ (After) - اختياري</label>
-                      {(projAfterFile || projAfterUrl) && (
+                      <label className="font-extrabold text-xs text-[#d4af37] block font-sans">رابط صورة بعد العمل والتنفيذ (After Image URL) - اختياري</label>
+                      {projAfterUrl && (
                         <div className="w-full h-36 rounded-xl overflow-hidden bg-black/5 relative border border-gray-200 shadow-inner mb-3">
                           <img
-                            src={projAfterFile ? URL.createObjectURL(projAfterFile) : projAfterUrl}
+                            src={projAfterUrl}
                             className="w-full h-full object-cover"
                             alt="After Preview"
                           />
                           <button
                             type="button"
-                            onClick={() => { setProjAfterFile(null); setProjAfterUrl(''); }}
+                            onClick={() => setProjAfterUrl('')}
                             className="absolute top-2 left-2 px-2 py-1 bg-red-600/95 text-white rounded-lg text-[10px] font-bold"
                           >
                             إزالة
@@ -1889,33 +1858,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       )}
                       <div className="flex flex-col gap-2">
                         <input
-                          type="file"
-                          accept="image/*"
-                          id="after-upload-btn"
-                          onChange={(e) => e.target.files && setProjAfterFile(e.target.files[0])}
-                          className="hidden"
-                        />
-                        <label
-                          htmlFor="after-upload-btn"
-                          className="px-3 py-2 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-xl text-xs font-bold text-center cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                          <ImageIcon className="w-4 h-4 text-[#d4af37]" />
-                          رفع صورة بعد التنفيذ
-                        </label>
-                        <input
                           type="text"
                           value={projAfterUrl}
                           onChange={(e) => setProjAfterUrl(e.target.value)}
-                          placeholder="أو رابط الصورة..."
-                          className="w-full p-2 bg-white border border-gray-200 rounded-xl text-[11px] text-left font-mono"
+                          placeholder="رابط صورة بعد التنفيذ (اختياري)..."
+                          className="w-full p-2.5 bg-white border border-gray-200 rounded-xl text-[11px] text-left font-mono outline-none focus:border-[#d4af37]"
                         />
                       </div>
                     </div>
                   </div>
 
-                  {/* Multi Gallery Upload */}
+                  {/* Multi Gallery URLs */}
                   <div className="space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-150">
-                    <label className="font-extrabold text-xs text-gray-700 block">معرض صور إضافية للمشروع (Gallery Images) *</label>
+                    <label className="font-extrabold text-xs text-gray-700 block">معرض صور إضافية للمشروع (Gallery Image URLs) *</label>
                     {projGalleryUrls.length > 0 && (
                       <div className="flex flex-wrap gap-2.5 p-3 bg-white border border-gray-200 rounded-xl mb-3">
                         {projGalleryUrls.map((url, i) => (
@@ -1933,52 +1888,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       </div>
                     )}
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* Drag-drop or click box */}
-                      <div>
-                        <input
-                          type="file"
-                          multiple
-                          accept="image/*"
-                          id="gallery-upload-btn"
-                          onChange={handleGalleryUpload}
-                          className="hidden"
+                    <div className="space-y-3">
+                      {/* Paste area for multiple URLs */}
+                      <div className="bg-white p-3 rounded-xl border border-gray-200 space-y-2">
+                        <label className="font-bold text-[10px] text-gray-500 block">إضافة روابط متعددة دفعة واحدة (رابط في كل سطر أو مفصولة بفواصل)</label>
+                        <textarea
+                          id="bulkGalleryUrls"
+                          rows={2}
+                          placeholder="انسخ روابط الصور هنا...&#10;https://example.com/img1.jpg&#10;https://example.com/img2.jpg"
+                          className="w-full p-2 text-[11px] font-mono text-left bg-gray-50 border rounded-lg resize-none outline-none focus:bg-white focus:border-[#d4af37]"
                         />
-                        <label
-                          htmlFor="gallery-upload-btn"
-                          className="h-[95px] px-4 bg-white border border-dashed border-gray-300 text-gray-600 hover:bg-gray-50 rounded-xl text-xs font-bold text-center cursor-pointer flex flex-col items-center justify-center gap-1.5 transition-all"
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const txtArea = document.getElementById('bulkGalleryUrls') as HTMLTextAreaElement;
+                            if (txtArea && txtArea.value.trim()) {
+                              const lines = txtArea.value.split(/[\n,]+/).map(line => line.trim()).filter(line => line.length > 0);
+                              if (lines.length > 0) {
+                                setProjGalleryUrls(p => [...p, ...lines]);
+                                txtArea.value = '';
+                                showFeedback(`تم إضافة ${lines.length} رابط إلى المعرض.`);
+                              }
+                            }
+                          }}
+                          className="w-full py-1.5 bg-[#171714] text-[#d4af37] rounded-lg font-bold text-[10px] hover:bg-black transition-all"
                         >
-                          <Plus className="w-5 h-5 text-[#d4af37]" />
-                          <span>رفع صور متعددة من الجهاز</span>
-                          <span className="text-[10px] text-gray-400 font-normal">يمكن اختيار صور متعددة معاً</span>
-                        </label>
+                          إضافة هذه الروابط للمعرض
+                        </button>
                       </div>
 
                       {/* Direct add link helper */}
-                      <div className="space-y-1.5 flex flex-col justify-center">
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            id="addGalInputModal"
-                            placeholder="أو ضع رابط صورة مباشرة..."
-                            className="flex-1 p-2.5 bg-white border border-gray-200 rounded-xl text-xs outline-none font-mono text-left"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const inp = document.getElementById('addGalInputModal') as HTMLInputElement;
-                              if(inp && inp.value.trim()) {
-                                setProjGalleryUrls(p => [...p, inp.value.trim()]);
-                                inp.value = '';
-                              }
-                            }}
-                            className="px-4 py-2 bg-[#171714] text-[#d4af37] rounded-xl font-bold text-xs"
-                          >
-                            إضافة
-                          </button>
-                        </div>
-                        <p className="text-[10px] text-gray-400">سيتم حفظ معرض الصور نهائياً عند حفظ المشروع بالكامل.</p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          id="addGalInputModal"
+                          placeholder="أو أضف رابط صورة مباشر واحد..."
+                          className="flex-1 p-2.5 bg-white border border-gray-200 rounded-xl text-xs outline-none font-mono text-left"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const inp = document.getElementById('addGalInputModal') as HTMLInputElement;
+                            if (inp && inp.value.trim()) {
+                              setProjGalleryUrls(p => [...p, inp.value.trim()]);
+                              inp.value = '';
+                            }
+                          }}
+                          className="px-4 py-2 bg-[#171714] text-[#d4af37] rounded-xl font-bold text-xs"
+                        >
+                          إضافة
+                        </button>
                       </div>
+                      <p className="text-[10px] text-gray-400">سيتم حفظ معرض الصور نهائياً عند حفظ المشروع بالكامل.</p>
                     </div>
                   </div>
 
