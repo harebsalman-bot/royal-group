@@ -8,7 +8,11 @@ import { useFirebaseState } from '../components/FirestoreStateContext';
 import { Sparkles, Send, UploadCloud, CheckCircle, AlertCircle, FileText, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-export const RequestDesign: React.FC = () => {
+interface RequestDesignProps {
+  setActiveTab?: (tab: string) => void;
+}
+
+export const RequestDesign: React.FC<RequestDesignProps> = ({ setActiveTab }) => {
   const { addDesignRequest, isFirebaseConnected } = useFirebaseState();
 
   // Form Fields
@@ -26,6 +30,11 @@ export const RequestDesign: React.FC = () => {
   // UI Status
   const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
+  
+  // Success tracking details
+  const [successRequestNumber, setSuccessRequestNumber] = useState('');
+  const [successPhone, setSuccessPhone] = useState('');
+  const [copied, setCopied] = useState(false);
 
   const planInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -42,7 +51,7 @@ export const RequestDesign: React.FC = () => {
       setStatus('submitting');
       setErrorMessage('');
 
-      await addDesignRequest(
+      const result = await addDesignRequest(
         {
           name,
           phone,
@@ -55,8 +64,12 @@ export const RequestDesign: React.FC = () => {
         imageFiles
       );
 
+      setSuccessRequestNumber(result?.requestNumber || '');
+      setSuccessPhone(phone);
       setStatus('success');
-      // Reset form
+      setCopied(false);
+      
+      // Reset form fields
       setName('');
       setPhone('');
       setArea('');
@@ -86,6 +99,12 @@ export const RequestDesign: React.FC = () => {
       setStatus('error');
       setErrorMessage(finalError);
     }
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(successRequestNumber);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const handlePlanFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -136,17 +155,57 @@ export const RequestDesign: React.FC = () => {
                     نشكرك على اختيار رويال جروب. لقد تم تسجيل طلب التصميم الخاص بك بنجاح في نظام المتابعة لدينا، وسيقوم أحد مهندسينا بالتواصل معك عبر الهاتف أو الواتساب خلال 24 ساعة كحد أقصى.
                   </p>
                 </div>
+
+                {/* Tracking Details Box */}
+                <div className="w-full max-w-md bg-gray-50 rounded-2xl border border-gray-150 p-6 space-y-4 text-right">
+                  <h4 className="text-xs font-black text-[#1e1e1a] border-r-2 border-[#d4af37] pr-2">معلومات تتبع الطلب الملكي</h4>
+                  
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100">
+                      <button 
+                        onClick={handleCopy}
+                        className="px-3 py-1 bg-[#171714] hover:bg-[#b8952b] text-white hover:text-[#171714] text-[10px] font-bold rounded-lg transition-all"
+                      >
+                        {copied ? 'تم النسخ!' : 'نسخ الرمز'}
+                      </button>
+                      <div className="text-right">
+                        <span className="block text-[10px] text-gray-400 font-medium">رمز تتبع الطلب الموحد</span>
+                        <span className="text-xs font-black text-[#d4af37] font-mono select-all tracking-wider">{successRequestNumber || 'RG-PENDING'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100">
+                      <span className="text-xs font-mono font-bold text-gray-800" dir="ltr">{successPhone}</span>
+                      <div className="text-right">
+                        <span className="block text-[10px] text-gray-400 font-medium">رقم الهاتف المسجل للطلب</span>
+                        <span className="text-xs font-bold text-gray-800">رقم الاتصال المباشر</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
+                  {setActiveTab && (
+                    <button
+                      onClick={() => setActiveTab('track')}
+                      className="px-6 py-3 rounded-xl bg-[#d4af37] hover:bg-[#b8952b] text-[#171714] text-xs font-black tracking-wide transition-all shadow-lg shadow-[#d4af37]/10"
+                    >
+                      تتبع حالة الطلب الآن
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setStatus('idle')}
+                    className="px-6 py-3 rounded-xl bg-[#171714] hover:bg-gray-800 text-white text-xs font-bold transition-all border border-transparent hover:border-[#d4af37]/20"
+                  >
+                    إرسال طلب تصميم آخر
+                  </button>
+                </div>
+
                 {!isFirebaseConnected && (
                   <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-[11px] max-w-md leading-relaxed">
                     💡 <strong>ملاحظة في الوضع التجريبي:</strong> تم تسجيل طلبك محلياً في الذاكرة بنجاح. يمكنك معاينة الطلب وإدارته بالذهاب إلى <strong>لوحة التحكم &gt; إدارة الطلبات</strong> لتجربة النظام بالكامل!
                   </div>
                 )}
-                <button
-                  onClick={() => setStatus('idle')}
-                  className="px-6 py-2.5 rounded-lg bg-[#171714] text-white hover:text-[#d4af37] text-xs font-bold transition-all"
-                >
-                  إرسال طلب تصميم آخر
-                </button>
               </motion.div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-8 text-right">

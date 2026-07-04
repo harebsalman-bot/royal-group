@@ -42,11 +42,11 @@ export default function App() {
       case 'before-after':
         return <BeforeAfterPage />;
       case 'color-lab':
-        return <ColorLab />;
+        return <ColorLab setActiveTab={setActiveTab} />;
       case 'services':
         return <Services />;
       case 'request':
-        return <RequestDesign />;
+        return <RequestDesign setActiveTab={setActiveTab} />;
       case 'track':
         return <TrackRequest />;
       case 'contact':

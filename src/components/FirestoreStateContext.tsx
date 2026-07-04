@@ -163,7 +163,7 @@ interface FirebaseStateContextType {
   addProject: (proj: Omit<Project, 'id' | 'createdAt'>) => Promise<void>;
   updateProject: (id: string, proj: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
-  addDesignRequest: (req: Omit<DesignRequest, 'id' | 'status' | 'createdAt'>, planFiles: File[], imageFiles: File[]) => Promise<void>;
+  addDesignRequest: (req: Omit<DesignRequest, 'id' | 'status' | 'createdAt'>, planFiles: File[], imageFiles: File[]) => Promise<DesignRequest>;
   updateDesignRequestStatus: (id: string, status: RequestStatus, additionalFields?: Partial<DesignRequest>) => Promise<void>;
   updateCompanySettings: (settings: CompanySettings) => Promise<void>;
   updateSocialLinks: (links: SocialLinks) => Promise<void>;
@@ -173,7 +173,7 @@ interface FirebaseStateContextType {
   addBedroomOption: (option: Omit<BedroomOption, 'id' | 'createdAt'>) => Promise<void>;
   updateBedroomOption: (id: string, option: Partial<BedroomOption>) => Promise<void>;
   deleteBedroomOption: (id: string) => Promise<void>;
-  addBedroomSubmission: (sub: Omit<BedroomSubmission, 'id' | 'createdAt' | 'status'>) => Promise<void>;
+  addBedroomSubmission: (sub: Omit<BedroomSubmission, 'id' | 'createdAt' | 'status'>) => Promise<BedroomSubmission>;
   updateBedroomSubmissionStatus: (id: string, status: RequestStatus, additionalFields?: Partial<BedroomSubmission>) => Promise<void>;
   deleteBedroomSubmission: (id: string) => Promise<void>;
 }
@@ -552,34 +552,56 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Helper to generate a unique request number dynamically
   const generateRequestNumber = async (): Promise<string> => {
-    let maxNum = 0;
+    let nextNum = 1;
     if (isFirebaseConnected) {
       try {
         const db = getDb();
-        const rSnap = await getDocs(collection(db, 'designRequests'));
-        const sSnap = await getDocs(collection(db, 'bedroomSubmissions'));
+        const counterRef = doc(db, 'counters', 'requests');
+        const counterSnap = await getDoc(counterRef);
         
-        rSnap.forEach(docSnap => {
-          const data = docSnap.data();
-          if (data.requestNumber && data.requestNumber.startsWith('RG-')) {
-            const num = parseInt(data.requestNumber.replace('RG-', ''), 10);
-            if (!isNaN(num) && num > maxNum) maxNum = num;
+        if (counterSnap.exists()) {
+          const data = counterSnap.data();
+          if (data && typeof data.lastNumber === 'number') {
+            nextNum = data.lastNumber + 1;
           }
-        });
+        } else {
+          // If the counter document doesn't exist, calculate the starting counter
+          let maxNum = 0;
+          try {
+            const rSnap = await getDocs(collection(db, 'designRequests'));
+            const sSnap = await getDocs(collection(db, 'bedroomSubmissions'));
+            
+            rSnap.forEach(docSnap => {
+              const data = docSnap.data();
+              if (data.requestNumber && data.requestNumber.startsWith('RG-')) {
+                const num = parseInt(data.requestNumber.replace('RG-', ''), 10);
+                if (!isNaN(num) && num > maxNum) maxNum = num;
+              }
+            });
+            
+            sSnap.forEach(docSnap => {
+              const data = docSnap.data();
+              if (data.requestNumber && data.requestNumber.startsWith('RG-')) {
+                const num = parseInt(data.requestNumber.replace('RG-', ''), 10);
+                if (!isNaN(num) && num > maxNum) maxNum = num;
+              }
+            });
+          } catch (e) {
+            console.warn("Permission boundary prevented counting existing collections. Defaulting next index to 1.");
+          }
+          nextNum = maxNum + 1;
+        }
         
-        sSnap.forEach(docSnap => {
-          const data = docSnap.data();
-          if (data.requestNumber && data.requestNumber.startsWith('RG-')) {
-            const num = parseInt(data.requestNumber.replace('RG-', ''), 10);
-            if (!isNaN(num) && num > maxNum) maxNum = num;
-          }
-        });
+        // Update the counter document so the next submission gets the next number
+        await setDoc(counterRef, { lastNumber: nextNum }, { merge: true });
+        return `RG-${String(nextNum).padStart(6, '0')}`;
       } catch (e) {
-        console.warn("Secure permission boundary restricts guest listing of request history. Generating a unique ID-based reference code.");
+        console.error("Error generating unique sequential request number from Firestore counters:", e);
       }
     }
     
     // Fallback/Demo check in local state
+    let maxNum = 0;
     if (designRequests.length > 0 || bedroomSubmissions.length > 0) {
       designRequests.forEach(r => {
         if (r.requestNumber && r.requestNumber.startsWith('RG-')) {
@@ -596,12 +618,14 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     }
     
     if (maxNum > 0) {
-      return `RG-${String(maxNum + 1).padStart(6, '0')}`;
+      nextNum = maxNum + 1;
+    } else {
+      // If absolutely no local records exist, generate a highly unique randomized reference code as fallback
+      const rand = Math.floor(100000 + Math.random() * 900000);
+      return `RG-${rand}`;
     }
     
-    // Generate highly unique randomized reference code as secure guest fallback
-    const rand = Math.floor(100000 + Math.random() * 900000);
-    return `RG-${rand}`;
+    return `RG-${String(nextNum).padStart(6, '0')}`;
   };
 
   /**
@@ -650,6 +674,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       // Demo State
       setDesignRequests(prev => [newRequest, ...prev]);
     }
+
+    return newRequest;
   };
 
   /**
@@ -827,6 +853,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     } else {
       setBedroomSubmissions(prev => [newSubmission, ...prev]);
     }
+
+    return newSubmission;
   };
 
   /**

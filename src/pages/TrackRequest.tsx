@@ -3,68 +3,212 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useFirebaseState } from '../components/FirestoreStateContext';
-import { Search, Calendar, Phone, Clock, AlertTriangle, FileText, CheckCircle, RefreshCw, Star, XCircle, ArrowLeft } from 'lucide-react';
+import { Search, Calendar, Phone, Clock, AlertTriangle, FileText, CheckCircle, RefreshCw, Star, XCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import { RequestStatus, RejectionReason } from '../types';
+import { collection, query, where, onSnapshot, limit } from 'firebase/firestore';
+import { getDb, isFirebaseReady } from '../firebase';
 
 export const TrackRequest: React.FC = () => {
   const { designRequests, bedroomSubmissions } = useFirebaseState();
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [searched, setSearched] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const unsubscribersRef = useRef<(() => void)[]>([]);
+
+  // Cleanup listeners on unmount
+  useEffect(() => {
+    return () => {
+      unsubscribersRef.current.forEach(unsub => unsub());
+    };
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return;
+    const queryStr = searchQuery.trim();
+    if (!queryStr) return;
 
-    // Search in designRequests and bedroomSubmissions
-    const matchedRequests = designRequests.filter(req => {
-      const numMatch = req.requestNumber?.toLowerCase().includes(query);
-      const phoneMatch = req.phone?.replace(/\s+/g, '').includes(query.replace(/\s+/g, ''));
-      return numMatch || phoneMatch;
-    });
+    // Clear previous real-time listeners
+    unsubscribersRef.current.forEach(unsub => unsub());
+    unsubscribersRef.current = [];
 
-    const matchedBedrooms = bedroomSubmissions.filter(sub => {
-      const numMatch = sub.requestNumber?.toLowerCase().includes(query);
-      const phoneMatch = sub.clientPhone?.replace(/\s+/g, '').includes(query.replace(/\s+/g, ''));
-      return numMatch || phoneMatch;
-    });
-
-    // Uniform mapping for combined rendering
-    const mappedRequests = matchedRequests.map(req => ({
-      id: req.id,
-      requestNumber: req.requestNumber || 'RG-PENDING',
-      clientName: req.name,
-      clientPhone: req.phone,
-      projectType: req.projectType,
-      date: req.createdAt,
-      status: req.status,
-      adminNotes: req.adminNotes,
-      rejectionReason: req.rejectionReason,
-      rejectionNotes: req.rejectionNotes,
-      type: 'standard',
-      details: req
-    }));
-
-    const mappedBedrooms = matchedBedrooms.map(sub => ({
-      id: sub.id,
-      requestNumber: sub.requestNumber || 'RG-PENDING',
-      clientName: sub.clientName,
-      clientPhone: sub.clientPhone,
-      projectType: 'غرف نوم ملكية مخصصة',
-      date: sub.createdAt,
-      status: sub.status,
-      adminNotes: sub.adminNotes,
-      rejectionReason: sub.rejectionReason,
-      rejectionNotes: sub.rejectionNotes,
-      type: 'bedroom',
-      details: sub
-    }));
-
-    setResults([...mappedRequests, ...mappedBedrooms]);
     setSearched(true);
+    setLoading(true);
+
+    if (isFirebaseReady()) {
+      try {
+        const db = getDb();
+        
+        let localRequests: any[] = [];
+        let localBedrooms: any[] = [];
+
+        const updateResults = () => {
+          // Combine and map
+          const mappedRequests = localRequests.map(req => ({
+            id: req.id,
+            requestNumber: req.requestNumber || 'RG-PENDING',
+            clientName: req.name,
+            clientPhone: req.phone,
+            projectType: req.projectType,
+            date: req.createdAt,
+            status: req.status,
+            adminNotes: req.adminNotes,
+            rejectionReason: req.rejectionReason,
+            rejectionNotes: req.rejectionNotes,
+            type: 'standard',
+            details: req
+          }));
+
+          const mappedBedrooms = localBedrooms.map(sub => ({
+            id: sub.id,
+            requestNumber: sub.requestNumber || 'RG-PENDING',
+            clientName: sub.clientName,
+            clientPhone: sub.clientPhone,
+            projectType: 'غرف نوم ملكية مخصصة',
+            date: sub.createdAt,
+            status: sub.status,
+            adminNotes: sub.adminNotes,
+            rejectionReason: sub.rejectionReason,
+            rejectionNotes: sub.rejectionNotes,
+            type: 'bedroom',
+            details: sub
+          }));
+
+          // Sort by date descending and unique check by id
+          const combined = [...mappedRequests, ...mappedBedrooms].sort((a, b) => b.date - a.date);
+          const uniqueResultsMap = new Map<string, any>();
+          combined.forEach(item => uniqueResultsMap.set(item.id, item));
+          
+          setResults(Array.from(uniqueResultsMap.values()));
+          setLoading(false);
+        };
+
+        const reqColl = collection(db, 'designRequests');
+        const bedColl = collection(db, 'bedroomSubmissions');
+
+        // We run 4 query listeners in parallel for robust real-time tracking:
+        
+        // 1. designRequests by Request Number
+        const q1 = query(reqColl, where('requestNumber', '==', queryStr), limit(20));
+        const unsub1 = onSnapshot(q1, (snap) => {
+          localRequests = localRequests.filter(r => r.requestNumber !== queryStr);
+          snap.forEach(docSnap => {
+            const data = docSnap.data();
+            localRequests.push({ id: docSnap.id, ...data });
+          });
+          updateResults();
+        }, (err) => {
+          console.error("Tracking listener error 1:", err);
+          setLoading(false);
+        });
+        unsubscribersRef.current.push(unsub1);
+
+        // 2. designRequests by Phone Number
+        const q2 = query(reqColl, where('phone', '==', queryStr), limit(20));
+        const unsub2 = onSnapshot(q2, (snap) => {
+          localRequests = localRequests.filter(r => r.phone !== queryStr);
+          snap.forEach(docSnap => {
+            const data = docSnap.data();
+            localRequests.push({ id: docSnap.id, ...data });
+          });
+          updateResults();
+        }, (err) => {
+          console.error("Tracking listener error 2:", err);
+          setLoading(false);
+        });
+        unsubscribersRef.current.push(unsub2);
+
+        // 3. bedroomSubmissions by Request Number
+        const q3 = query(bedColl, where('requestNumber', '==', queryStr), limit(20));
+        const unsub3 = onSnapshot(q3, (snap) => {
+          localBedrooms = localBedrooms.filter(b => b.requestNumber !== queryStr);
+          snap.forEach(docSnap => {
+            const data = docSnap.data();
+            localBedrooms.push({ id: docSnap.id, ...data });
+          });
+          updateResults();
+        }, (err) => {
+          console.error("Tracking listener error 3:", err);
+          setLoading(false);
+        });
+        unsubscribersRef.current.push(unsub3);
+
+        // 4. bedroomSubmissions by Phone Number
+        const q4 = query(bedColl, where('clientPhone', '==', queryStr), limit(20));
+        const unsub4 = onSnapshot(q4, (snap) => {
+          localBedrooms = localBedrooms.filter(b => b.clientPhone !== queryStr);
+          snap.forEach(docSnap => {
+            const data = docSnap.data();
+            localBedrooms.push({ id: docSnap.id, ...data });
+          });
+          updateResults();
+        }, (err) => {
+          console.error("Tracking listener error 4:", err);
+          setLoading(false);
+        });
+        unsubscribersRef.current.push(unsub4);
+
+        // Fail-safe limit for loader
+        setTimeout(() => {
+          setLoading(false);
+        }, 1500);
+
+      } catch (err) {
+        console.error("Failed to query live database:", err);
+        setLoading(false);
+      }
+    } else {
+      // Fallback/Demo mode check
+      const queryLower = queryStr.toLowerCase();
+      const matchedRequests = designRequests.filter(req => {
+        const numMatch = req.requestNumber?.toLowerCase().includes(queryLower);
+        const phoneMatch = req.phone?.replace(/\s+/g, '').includes(queryLower.replace(/\s+/g, ''));
+        return numMatch || phoneMatch;
+      });
+
+      const matchedBedrooms = bedroomSubmissions.filter(sub => {
+        const numMatch = sub.requestNumber?.toLowerCase().includes(queryLower);
+        const phoneMatch = sub.clientPhone?.replace(/\s+/g, '').includes(queryLower.replace(/\s+/g, ''));
+        return numMatch || phoneMatch;
+      });
+
+      const mappedRequests = matchedRequests.map(req => ({
+        id: req.id,
+        requestNumber: req.requestNumber || 'RG-PENDING',
+        clientName: req.name,
+        clientPhone: req.phone,
+        projectType: req.projectType,
+        date: req.createdAt,
+        status: req.status,
+        adminNotes: req.adminNotes,
+        rejectionReason: req.rejectionReason,
+        rejectionNotes: req.rejectionNotes,
+        type: 'standard',
+        details: req
+      }));
+
+      const mappedBedrooms = matchedBedrooms.map(sub => ({
+        id: sub.id,
+        requestNumber: sub.requestNumber || 'RG-PENDING',
+        clientName: sub.clientName,
+        clientPhone: sub.clientPhone,
+        projectType: 'غرف نوم ملكية مخصصة',
+        date: sub.createdAt,
+        status: sub.status,
+        adminNotes: sub.adminNotes,
+        rejectionReason: sub.rejectionReason,
+        rejectionNotes: sub.rejectionNotes,
+        type: 'bedroom',
+        details: sub
+      }));
+
+      const combined = [...mappedRequests, ...mappedBedrooms].sort((a, b) => b.date - a.date);
+      setResults(combined);
+      setLoading(false);
+    }
   };
 
   const getStatusText = (status: RequestStatus) => {
@@ -279,10 +423,15 @@ export const TrackRequest: React.FC = () => {
         {searched && (
           <div className="space-y-6">
             <h3 className="text-xs font-black text-[#d4af37] border-r-2 border-[#d4af37] pr-2.5 mr-1 font-sans">
-              نتائج الاستفسار ({results.length})
+              نتائج الاستفسار {!loading && `(${results.length})`}
             </h3>
 
-            {results.length === 0 ? (
+            {loading ? (
+              <div className="bg-[#171714] border border-[#d4af37]/10 rounded-3xl p-16 text-center space-y-4">
+                <Loader2 className="w-10 h-10 text-[#d4af37] mx-auto animate-spin" />
+                <p className="text-xs text-gray-400">جاري البحث ومزامنة البيانات في الوقت الفعلي...</p>
+              </div>
+            ) : results.length === 0 ? (
               <div className="bg-[#171714] border border-[#d4af37]/10 rounded-3xl p-12 text-center space-y-4">
                 <AlertTriangle className="w-12 h-12 text-[#d4af37]/50 mx-auto animate-bounce" />
                 <div className="space-y-1">

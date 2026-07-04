@@ -2,11 +2,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Global Safety Net - Default Deny
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
     // Helper functions
     function isSignedIn() {
       return request.auth != null;
@@ -17,161 +12,67 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.email == 'harebsalman@gmail.com';
     }
 
-    // Simplify ID validation to avoid potential regular expression compiler issues
-    function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128;
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    // Validation helpers
-    function isValidProject(data) {
-      return data.title is string && data.title.size() <= 200 &&
-             data.description is string && data.description.size() <= 3000 &&
-             data.area is string && data.area.size() <= 50 &&
-             data.city is string && data.city.size() <= 100 &&
-             data.coverImage is string && data.coverImage.size() <= 1500 &&
-             data.category is string && data.category.size() <= 100 &&
-             data.featured is bool &&
-             (data.createdAt is int || data.createdAt is float);
-    }
-
-    function isValidProjectImage(data) {
-      return data.title is string && data.title.size() <= 200 &&
-             data.url is string && data.url.size() <= 1500 &&
-             (data.createdAt is int || data.createdAt is float);
-    }
-
-    function isValidCategory(data) {
-      return data.name is string && data.name.size() <= 100 &&
-             data.slug is string && data.slug.size() <= 100;
-    }
-
-    function isValidColorVariant(data) {
-      return data.name is string && data.name.size() <= 100 &&
-             data.type is string && (data.type == 'wood' || data.type == 'marble' || data.type == 'wall' || data.type == 'flooring') &&
-             data.colorValue is string && data.colorValue.size() <= 50 &&
-             data.image is string && data.image.size() <= 1500 &&
-             (data.createdAt is int || data.createdAt is float);
-    }
-
-    function isValidDesignRequest(data) {
-      return data.name is string && data.name.size() <= 100 &&
-             data.phone is string && data.phone.size() <= 50 &&
-             data.city is string && data.city.size() <= 100 &&
-             data.projectType is string && data.projectType.size() <= 100 &&
-             data.area is string && data.area.size() <= 50 &&
-             data.budget is string && data.budget.size() <= 50 &&
-             (data.createdAt is int || data.createdAt is float);
-    }
-
-    function isValidCompanySettings(data) {
-      return data.address is string && data.address.size() <= 300 &&
-             data.phone is string && data.phone.size() <= 50 &&
-             data.whatsapp is string && data.whatsapp.size() <= 50 &&
-             data.aboutText is string && data.aboutText.size() <= 4000;
-    }
-
-    function isValidSocialLinks(data) {
-      return data.instagram is string && data.instagram.size() <= 500 &&
-             data.facebook is string && data.facebook.size() <= 500 &&
-             data.tiktok is string && data.tiktok.size() <= 500 &&
-             data.youtube is string && data.youtube.size() <= 500;
-    }
-
-    function isValidBedroomOption(data) {
-      return data.section is string && (
-               data.section == 'bed' || data.section == 'headboard' || data.section == 'nightstand' || 
-               data.section == 'vanity' || data.section == 'wardrobe' || data.section == 'tvUnit' || 
-               data.section == 'curtains' || data.section == 'flooring' || data.section == 'ceiling' || 
-               data.section == 'lighting'
-             ) &&
-             data.name is string && data.name.size() <= 200 &&
-             data.image is string && data.image.size() <= 1500 &&
-             (data.createdAt is int || data.createdAt is float);
-    }
-
-    function isValidBedroomSubmission(data) {
-      return data.clientName is string && data.clientName.size() <= 150 &&
-             data.clientPhone is string && data.clientPhone.size() <= 50 &&
-             data.selections is map &&
-             (data.createdAt is int || data.createdAt is float);
-    }
-
-    // --- Collection Security Rules ---
-
     // PROJECTS Collection
     match /projects/{projectId} {
-      allow get, list: if true;
-      allow create: if isAdmin() && isValidProject(incoming()) && isValidId(projectId);
-      allow update: if isAdmin() && isValidProject(incoming());
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // CATEGORIES Collection
     match /categories/{categoryId} {
-      allow get, list: if true;
-      allow create: if isAdmin() && isValidCategory(incoming()) && isValidId(categoryId);
-      allow update: if isAdmin() && isValidCategory(incoming());
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // PROJECT IMAGES Collection
     match /projectImages/{imageId} {
-      allow get, list: if true;
-      allow create: if isAdmin() && isValidProjectImage(incoming()) && isValidId(imageId);
-      allow update: if isAdmin() && isValidProjectImage(incoming());
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // COLOR VARIANTS Collection
     match /colorVariants/{variantId} {
-      allow get, list: if true;
-      allow create: if isAdmin() && isValidColorVariant(incoming()) && isValidId(variantId);
-      allow update: if isAdmin() && isValidColorVariant(incoming());
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // COMPANY SETTINGS Collection
     match /companySettings/{settingId} {
-      allow get, list: if true;
-      allow create: if isAdmin() && isValidCompanySettings(incoming()) && isValidId(settingId);
-      allow update: if isAdmin() && isValidCompanySettings(incoming());
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // SOCIAL LINKS Collection
     match /socialLinks/{linkId} {
-      allow get, list: if true;
-      allow create: if isAdmin() && isValidSocialLinks(incoming()) && isValidId(linkId);
-      allow update: if isAdmin() && isValidSocialLinks(incoming());
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // BEDROOM OPTIONS Collection
     match /bedroomOptions/{optionId} {
-      allow get, list: if true;
-      allow create: if isAdmin() && isValidBedroomOption(incoming()) && isValidId(optionId);
-      allow update: if isAdmin() && isValidBedroomOption(incoming());
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // DESIGN REQUESTS Collection
     match /designRequests/{requestId} {
-      allow create: if (isAdmin() || isValidDesignRequest(incoming())) && isValidId(requestId);
-      allow get, list: if isAdmin();
-      allow update: if isAdmin() && isValidDesignRequest(incoming());
-      allow delete: if isAdmin();
+      allow create: if true;
+      allow get: if true;
+      allow list: if isAdmin() || (request.query.limit <= 20);
+      allow update, delete: if isAdmin();
     }
 
     // BEDROOM SUBMISSIONS Collection
     match /bedroomSubmissions/{submissionId} {
-      allow create: if (isAdmin() || isValidBedroomSubmission(incoming())) && isValidId(submissionId);
-      allow get, list: if isAdmin();
-      allow update: if isAdmin() && isValidBedroomSubmission(incoming());
-      allow delete: if isAdmin();
+      allow create: if true;
+      allow get: if true;
+      allow list: if isAdmin() || (request.query.limit <= 20);
+      allow update, delete: if isAdmin();
+    }
+
+    // COUNTERS Collection
+    match /counters/{counterId} {
+      allow read, write: if true;
     }
   }
 }

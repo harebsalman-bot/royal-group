@@ -83,7 +83,11 @@ const SECTIONS: SectionDef[] = [
   }
 ];
 
-export const ColorLab: React.FC = () => {
+interface ColorLabProps {
+  setActiveTab?: (tab: string) => void;
+}
+
+export const ColorLab: React.FC<ColorLabProps> = ({ setActiveTab }) => {
   const { bedroomOptions, addBedroomSubmission } = useFirebaseState();
   const [activeStep, setActiveStep] = useState<number>(0);
   
@@ -96,6 +100,17 @@ export const ColorLab: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
   const [formError, setFormError] = useState('');
+
+  // Success tracking details
+  const [successRequestNumber, setSuccessRequestNumber] = useState('');
+  const [successPhone, setSuccessPhone] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(successRequestNumber);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   // Get current active section
   const currentSection = SECTIONS[activeStep];
@@ -166,14 +181,17 @@ export const ColorLab: React.FC = () => {
         };
       });
 
-      await addBedroomSubmission({
+      const result = await addBedroomSubmission({
         clientName: clientName.trim(),
         clientPhone: clientPhone.trim(),
         selections: formattedSelections
       });
 
+      setSuccessRequestNumber(result?.requestNumber || '');
+      setSuccessPhone(clientPhone.trim());
       setSubmitting(false);
       setSubmittedSuccess(true);
+      setCopied(false);
     } catch (err: any) {
       console.error("Bedroom Submission Error:", err);
       
@@ -508,18 +526,56 @@ export const ColorLab: React.FC = () => {
                 </button>
               </form>
             ) : (
-              <div className="bg-[#1e1e1a] border border-[#d4af37]/30 p-5 rounded-2xl text-center space-y-4">
-                <CheckCircle2 className="w-12 h-12 text-[#d4af37] mx-auto animate-bounce" />
-                <div className="space-y-1">
-                  <h4 className="text-xs font-black text-white">تم استلام خياراتك بنجاح!</h4>
-                  <p className="text-[10px] text-gray-400">لقد تم حفظ تفضيلات غرفة نومك المخصصة. سيتصل بك مصممونا قريباً لعرض الرندر مجاناً.</p>
+              <div className="bg-[#1e1e1a] border border-[#d4af37]/30 p-6 rounded-3xl text-center space-y-5">
+                <div className="p-3 bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20 rounded-full w-fit mx-auto">
+                  <CheckCircle2 className="w-10 h-10 animate-pulse" />
                 </div>
-                <button
-                  onClick={handleReset}
-                  className="px-4 py-2 bg-gray-900 text-gray-300 hover:text-white rounded-lg text-[10px] font-bold border border-gray-800 transition-all"
-                >
-                  بدء تصميم جديد
-                </button>
+                
+                <div className="space-y-1">
+                  <h4 className="text-xs font-black text-white">تم استلام خياراتك الملكية بنجاح!</h4>
+                  <p className="text-[10px] text-gray-400">لقد تم حفظ تفضيلات غرفة نومك وتوليد رمز تتبع مخصص لمشروعك.</p>
+                </div>
+
+                {/* Compact Dark Tracking Box */}
+                <div className="bg-black/40 rounded-2xl border border-gray-900 p-4 space-y-3.5 text-right">
+                  <div className="flex items-center justify-between bg-[#171714] border border-[#d4af37]/15 p-2.5 rounded-xl">
+                    <button 
+                      onClick={handleCopy}
+                      className="px-2.5 py-1 bg-[#d4af37] hover:bg-[#b8952b] text-black text-[9px] font-black rounded-lg transition-all"
+                    >
+                      {copied ? 'تم النسخ!' : 'نسخ الرمز'}
+                    </button>
+                    <div className="text-right">
+                      <span className="block text-[9px] text-gray-500 font-medium">رمز تتبع المشروع</span>
+                      <span className="text-xs font-black text-[#d4af37] font-mono select-all tracking-wider">{successRequestNumber || 'RG-PENDING'}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between bg-[#171714] border border-gray-900 p-2.5 rounded-xl">
+                    <span className="text-xs font-mono font-bold text-gray-300" dir="ltr">{successPhone}</span>
+                    <div className="text-right">
+                      <span className="block text-[9px] text-gray-500 font-medium">رقم الهاتف للطلب</span>
+                      <span className="text-xs font-bold text-gray-300">رقم التواصل</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-1.5">
+                  {setActiveTab && (
+                    <button
+                      onClick={() => setActiveTab('track')}
+                      className="w-full py-2.5 bg-[#d4af37] hover:bg-[#b8952b] text-black text-xs font-black rounded-xl transition-all shadow-lg shadow-[#d4af37]/5"
+                    >
+                      تتبع حالة المشروع الآن
+                    </button>
+                  )}
+                  <button
+                    onClick={handleReset}
+                    className="w-full py-2.5 bg-[#171714] hover:bg-[#232320] text-gray-300 hover:text-white rounded-xl text-xs font-bold border border-gray-800 transition-all"
+                  >
+                    بدء تصميم جديد
+                  </button>
+                </div>
               </div>
             )}
           </div>
