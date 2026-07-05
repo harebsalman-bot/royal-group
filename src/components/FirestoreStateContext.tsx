@@ -1016,18 +1016,40 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     if (isFirebaseConnected) {
       try {
         const db = getDb();
+        console.log("[Firestore] [addDesignRequest] Starting creation process...");
+        
+        console.log(`[Firestore] [addDesignRequest] Creating designRequest doc: designRequests/${newId}`);
         await setDoc(doc(db, 'designRequests', newId), newRequest);
+        console.log(`[Firestore] [addDesignRequest] Created designRequest successfully!`);
+
+        console.log(`[Firestore] [addDesignRequest] Creating ticket doc: tickets/${ticketId}`);
         await setDoc(doc(db, 'tickets', ticketId), newTicket);
+        console.log(`[Firestore] [addDesignRequest] Created ticket successfully!`);
+
+        console.log(`[Firestore] [addDesignRequest] Creating message doc: messages/${systemMsg.id}`);
         await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
+        console.log(`[Firestore] [addDesignRequest] Created welcome message successfully!`);
+
         if (engineerIntroMsg) {
+          console.log(`[Firestore] [addDesignRequest] Creating engineer intro message doc: messages/${engineerIntroMsg.id}`);
           await setDoc(doc(db, 'messages', engineerIntroMsg.id), engineerIntroMsg);
+          console.log(`[Firestore] [addDesignRequest] Created engineer intro message successfully!`);
         }
 
         if (assignedEng) {
           const updatedCount = (assignedEng.currentTickets || 0) + 1;
-          await updateDoc(doc(db, 'engineers', assignedEng.id), { currentTickets: updatedCount });
+          console.log(`[Firestore] [addDesignRequest] Updating engineer: engineers/${assignedEng.id} (currentTickets count = ${updatedCount})`);
+          try {
+            await updateDoc(doc(db, 'engineers', assignedEng.id), { currentTickets: updatedCount });
+            console.log(`[Firestore] [addDesignRequest] Updated engineer tickets count successfully!`);
+          } catch (engError) {
+            console.error(`[Firestore] [addDesignRequest] Failed to update engineer count:`, engError);
+          }
         }
+        
+        console.log("[Firestore] [addDesignRequest] Completed all creation operations successfully!");
       } catch (error) {
+        console.error("[Firestore] [addDesignRequest] Fatal error in submission process:", error);
         handleFirestoreError(error, OperationType.CREATE, `designRequests/${newId}`);
       }
     } else {
@@ -1300,18 +1322,40 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     if (isFirebaseConnected) {
       try {
         const db = getDb();
+        console.log("[Firestore] [addBedroomSubmission] Starting creation process...");
+        
+        console.log(`[Firestore] [addBedroomSubmission] Creating bedroomSubmission doc: bedroomSubmissions/${newId}`);
         await setDoc(doc(db, 'bedroomSubmissions', newId), newSubmission);
+        console.log(`[Firestore] [addBedroomSubmission] Created bedroomSubmission successfully!`);
+
+        console.log(`[Firestore] [addBedroomSubmission] Creating ticket doc: tickets/${ticketId}`);
         await setDoc(doc(db, 'tickets', ticketId), newTicket);
+        console.log(`[Firestore] [addBedroomSubmission] Created ticket successfully!`);
+
+        console.log(`[Firestore] [addBedroomSubmission] Creating message doc: messages/${systemMsg.id}`);
         await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
+        console.log(`[Firestore] [addBedroomSubmission] Created welcome message successfully!`);
+
         if (engineerIntroMsg) {
+          console.log(`[Firestore] [addBedroomSubmission] Creating engineer intro message doc: messages/${engineerIntroMsg.id}`);
           await setDoc(doc(db, 'messages', engineerIntroMsg.id), engineerIntroMsg);
+          console.log(`[Firestore] [addBedroomSubmission] Created engineer intro message successfully!`);
         }
 
         if (assignedEng) {
           const updatedCount = (assignedEng.currentTickets || 0) + 1;
-          await updateDoc(doc(db, 'engineers', assignedEng.id), { currentTickets: updatedCount });
+          console.log(`[Firestore] [addBedroomSubmission] Updating engineer: engineers/${assignedEng.id} (currentTickets count = ${updatedCount})`);
+          try {
+            await updateDoc(doc(db, 'engineers', assignedEng.id), { currentTickets: updatedCount });
+            console.log(`[Firestore] [addBedroomSubmission] Updated engineer tickets count successfully!`);
+          } catch (engError) {
+            console.error(`[Firestore] [addBedroomSubmission] Failed to update engineer count:`, engError);
+          }
         }
+        
+        console.log("[Firestore] [addBedroomSubmission] Completed all creation operations successfully!");
       } catch (error) {
+        console.error("[Firestore] [addBedroomSubmission] Fatal error in submission process:", error);
         handleFirestoreError(error, OperationType.CREATE, `bedroomSubmissions/${newId}`);
       }
     } else {
