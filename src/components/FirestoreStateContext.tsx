@@ -12,7 +12,7 @@ import {
   mockProjects, mockCategories, mockColorVariants, mockCompanySettings, mockSocialLinks 
 } from '../data/mockData';
 import { 
-  initializeDynamicFirebase, isFirebaseReady, getDb, handleFirestoreError, OperationType 
+  initializeDynamicFirebase, isFirebaseReady, getDb, getAuthService, handleFirestoreError, OperationType 
 } from '../firebase';
 import { 
   collection, doc, getDocs, setDoc, updateDoc, deleteDoc, getDoc, query, orderBy, onSnapshot 
@@ -573,7 +573,18 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     if (isFirebaseConnected) {
       try {
         const db = getDb();
-        await setDoc(doc(db, 'projects', newId), newProject);
+        const projectData = newProject;
+        let auth: any = null;
+        try {
+          auth = getAuthService();
+        } catch (authErr) {
+          // Fallback if auth is not initialized
+        }
+
+        console.log("PROJECT PAYLOAD", JSON.stringify(projectData, null, 2));
+        console.log("AUTH USER", auth?.currentUser?.email);
+
+        await setDoc(doc(db, 'projects', newId), projectData);
       } catch (error) {
         handleFirestoreError(error, OperationType.CREATE, `projects/${newId}`);
       }
