@@ -1,10 +1,10 @@
 {
-  "projectId": "remixed-project-id",
-  "appId": "remixed-app-id",
-  "apiKey": "remixed-api-key",
-  "authDomain": "remixed-auth-domain",
+  "projectId": "royal-group-interior",
+  "appId": "1:1092390097047:web:0add0db39538fc075d99d2",
+  "apiKey": "AIzaSyAzvH4G-FjQ0ESVU8eIjxrdsR8OGqaEAZI",
+  "authDomain": "royal-group-interior.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-royalgroup-9ad9c5e1-ff84-4044-be12-d1feb03a7592",
-  "storageBucket": "remixed-storage-bucket",
-  "messagingSenderId": "remixed-messaging-sender-id",
-  "measurementId": "remixed-measurement-id"
+  "storageBucket": "royal-group-interior.firebasestorage.app",
+  "messagingSenderId": "1092390097047",
+  "measurementId": "G-NX6N4WRTLS"
 }
