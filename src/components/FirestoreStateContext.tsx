@@ -938,80 +938,19 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       imageUrl.push(url);
     }
 
-    const ticketId = await generateTicketId();
-
-    // Auto-select active engineer (least loaded first)
-    const activeEngs = engineers.filter(e => e.active !== false);
-    const assignedEng = activeEngs.length > 0
-      ? [...activeEngs].sort((a, b) => (a.currentTickets || 0) - (b.currentTickets || 0))[0]
-      : null;
-
     const newRequest: DesignRequest = {
       ...req,
       id: newId,
       plansUrl,
       imageUrl,
-      status: 'New',
+      status: 'pending',
       requestNumber: reqNum,
       viewed: false,
-      ticketId,
+      ticketId: undefined,
       createdAt: Date.now(),
-      ...(assignedEng ? {
-        assignedEngineerId: assignedEng.id,
-        assignedEngineerName: assignedEng.name,
-        assignedAt: Date.now()
-      } : {})
+      assignedEngineerId: null,
+      assignedEngineerName: null
     };
-
-    const newTicket: Ticket = {
-      id: ticketId,
-      requestId: newId,
-      trackingId: reqNum,
-      relatedRequestNumber: reqNum,
-      sourceId: newId,
-      sourceType: 'design_request',
-      clientName: req.name,
-      clientPhone: req.phone,
-      title: `طلب تصميم - ${req.projectType}`,
-      subject: `طلب تصميم - ${req.projectType}`,
-      description: req.adminNotes || `تذكرة تم إنشاؤها تلقائياً لطلب تصميم مخصص رقم ${reqNum}`,
-      status: 'open',
-      attachments: imageUrl,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      ...(assignedEng ? {
-        assignedEngineerId: assignedEng.id,
-        assignedEngineerName: assignedEng.name,
-        assignedAt: Date.now()
-      } : {})
-    };
-
-    const welcomeContent = assignedEng
-      ? `أهلاً بك يا ${req.name} في نظام المتابعة والدعم لـ Royal Group. تم إنشاء تذكرتك وغرفة المحادثة بنجاح برقم التتبع ${reqNum} وتم تعيين المهندس المصمم [م. ${assignedEng.name}] لمتابعة مشروعك والدردشة معك هنا.`
-      : `أهلاً بك يا ${req.name} في نظام المتابعة والدعم لـ Royal Group. تم إنشاء تذكرتك وغرفة المحادثة بنجاح برقم التتبع ${reqNum}. سيقوم مهندسو التصميم لدينا بمتابعة طلبك والتواصل معك هنا مباشرة.`;
-
-    const systemMsg: Message = {
-      id: `msg_welcome_${Date.now()}`,
-      ticketId,
-      senderId: 'admin',
-      senderName: 'إدارة رويال جروب',
-      senderRole: 'admin',
-      content: welcomeContent,
-      createdAt: Date.now()
-    };
-
-    let engineerIntroMsg: Message | null = null;
-    if (assignedEng) {
-      engineerIntroMsg = {
-        id: `msg_eng_intro_${Date.now()}`,
-        ticketId,
-        senderId: assignedEng.id,
-        senderName: `م. ${assignedEng.name}`,
-        senderRole: 'engineer',
-        content: `أهلاً بك يا سيد ${req.name}، أنا المهندس ${assignedEng.name} المصمم المسؤول عن طلبك في رويال جروب. لقد اطلعت على التفاصيل وسأبدأ العمل عليها فوراً. يرجى تزويدي بأي متطلبات أو مخططات إضافية هنا لمباشرة الإعداد الفني.`,
-        createdAt: Date.now() + 100
-      };
-    }
 
     if (isFirebaseConnected) {
       try {
@@ -1021,32 +960,6 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log(`[Firestore] [addDesignRequest] Creating designRequest doc: designRequests/${newId}`);
         await setDoc(doc(db, 'designRequests', newId), newRequest);
         console.log(`[Firestore] [addDesignRequest] Created designRequest successfully!`);
-
-        console.log(`[Firestore] [addDesignRequest] Creating ticket doc: tickets/${ticketId}`);
-        await setDoc(doc(db, 'tickets', ticketId), newTicket);
-        console.log(`[Firestore] [addDesignRequest] Created ticket successfully!`);
-
-        console.log(`[Firestore] [addDesignRequest] Creating message doc: messages/${systemMsg.id}`);
-        await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
-        console.log(`[Firestore] [addDesignRequest] Created welcome message successfully!`);
-
-        if (engineerIntroMsg) {
-          console.log(`[Firestore] [addDesignRequest] Creating engineer intro message doc: messages/${engineerIntroMsg.id}`);
-          await setDoc(doc(db, 'messages', engineerIntroMsg.id), engineerIntroMsg);
-          console.log(`[Firestore] [addDesignRequest] Created engineer intro message successfully!`);
-        }
-
-        if (assignedEng) {
-          const updatedCount = (assignedEng.currentTickets || 0) + 1;
-          console.log(`[Firestore] [addDesignRequest] Updating engineer: engineers/${assignedEng.id} (currentTickets count = ${updatedCount})`);
-          try {
-            await updateDoc(doc(db, 'engineers', assignedEng.id), { currentTickets: updatedCount });
-            console.log(`[Firestore] [addDesignRequest] Updated engineer tickets count successfully!`);
-          } catch (engError) {
-            console.error(`[Firestore] [addDesignRequest] Failed to update engineer count:`, engError);
-          }
-        }
-        
         console.log("[Firestore] [addDesignRequest] Completed all creation operations successfully!");
       } catch (error) {
         console.error("[Firestore] [addDesignRequest] Fatal error in submission process:", error);
@@ -1055,15 +968,6 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     } else {
       // Demo State
       setDesignRequests(prev => [newRequest, ...prev]);
-      setTickets(prev => [newTicket, ...prev]);
-      setMessages(prev => {
-        const next = [...prev, systemMsg];
-        if (engineerIntroMsg) next.push(engineerIntroMsg);
-        return next;
-      });
-      if (assignedEng) {
-        setEngineers(prev => prev.map(e => e.id === assignedEng.id ? { ...e, currentTickets: (e.currentTickets || 0) + 1 } : e));
-      }
     }
 
     return newRequest;
@@ -1247,77 +1151,18 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   const addBedroomSubmission = async (sub: Omit<BedroomSubmission, 'id' | 'createdAt' | 'status'>) => {
     const newId = `sub_${Date.now()}`;
     const reqNum = await generateRequestNumber();
-    const ticketId = await generateTicketId();
-
-    // Auto-select active engineer (least loaded first)
-    const activeEngs = engineers.filter(e => e.active !== false);
-    const assignedEng = activeEngs.length > 0
-      ? [...activeEngs].sort((a, b) => (a.currentTickets || 0) - (b.currentTickets || 0))[0]
-      : null;
 
     const newSubmission: BedroomSubmission = {
       ...sub,
       id: newId,
-      status: 'New',
+      status: 'pending',
       requestNumber: reqNum,
       viewed: false,
-      ticketId,
+      ticketId: undefined,
       createdAt: Date.now(),
-      ...(assignedEng ? {
-        assignedEngineerId: assignedEng.id,
-        assignedEngineerName: assignedEng.name,
-        assignedAt: Date.now()
-      } : {})
+      assignedEngineerId: null,
+      assignedEngineerName: null
     };
-
-    const newTicket: Ticket = {
-      id: ticketId,
-      requestId: newId,
-      trackingId: reqNum,
-      relatedRequestNumber: reqNum,
-      sourceId: newId,
-      sourceType: 'bedroom_submission',
-      clientName: sub.clientName,
-      clientPhone: sub.clientPhone,
-      title: `تصميم غرفة نوم مخصص`,
-      subject: `تصميم غرفة نوم مخصص`,
-      description: `تذكرة تم إنشاؤها تلقائياً لطلب تصميم غرفة نوم رقم ${reqNum}`,
-      status: 'open',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      ...(assignedEng ? {
-        assignedEngineerId: assignedEng.id,
-        assignedEngineerName: assignedEng.name,
-        assignedAt: Date.now()
-      } : {})
-    };
-
-    const welcomeContent = assignedEng
-      ? `أهلاً بك يا ${sub.clientName} في نظام المتابعة والدعم لـ Royal Group. تم إنشاء تذكرتك وغرفة المحادثة بنجاح برقم التتبع ${reqNum} وتم تعيين المهندس المصمم [م. ${assignedEng.name}] لمتابعة مشروعك والدردشة معك هنا.`
-      : `أهلاً بك يا ${sub.clientName} في نظام المتابعة والدعم لـ Royal Group. تم إنشاء تذكرتك وغرفة المحادثة بنجاح برقم التتبع ${reqNum}. سيقوم مهندسو التصميم لدينا بمتابعة طلبك والتواصل معك هنا مباشرة.`;
-
-    const systemMsg: Message = {
-      id: `msg_welcome_${Date.now()}`,
-      ticketId,
-      senderId: 'admin',
-      senderName: 'إدارة رويال جروب',
-      senderRole: 'admin',
-      content: welcomeContent,
-      createdAt: Date.now()
-    };
-
-    let engineerIntroMsg: Message | null = null;
-    if (assignedEng) {
-      engineerIntroMsg = {
-        id: `msg_eng_intro_${Date.now()}`,
-        ticketId,
-        senderId: assignedEng.id,
-        senderName: `م. ${assignedEng.name}`,
-        senderRole: 'engineer',
-        content: `أهلاً بك يا سيد ${sub.clientName}، أنا المهندس ${assignedEng.name} المصمم المسؤول عن تذكرة تصميم غرفة نومك في رويال جروب. لقد استلمت تفاصيل طلبك وخياراتك من الألوان والموديلات وسأبدأ بمراجعتها وتحضير التصاميم المخصصة لك هنا.`,
-        createdAt: Date.now() + 100
-      };
-    }
 
     if (isFirebaseConnected) {
       try {
@@ -1327,32 +1172,6 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log(`[Firestore] [addBedroomSubmission] Creating bedroomSubmission doc: bedroomSubmissions/${newId}`);
         await setDoc(doc(db, 'bedroomSubmissions', newId), newSubmission);
         console.log(`[Firestore] [addBedroomSubmission] Created bedroomSubmission successfully!`);
-
-        console.log(`[Firestore] [addBedroomSubmission] Creating ticket doc: tickets/${ticketId}`);
-        await setDoc(doc(db, 'tickets', ticketId), newTicket);
-        console.log(`[Firestore] [addBedroomSubmission] Created ticket successfully!`);
-
-        console.log(`[Firestore] [addBedroomSubmission] Creating message doc: messages/${systemMsg.id}`);
-        await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
-        console.log(`[Firestore] [addBedroomSubmission] Created welcome message successfully!`);
-
-        if (engineerIntroMsg) {
-          console.log(`[Firestore] [addBedroomSubmission] Creating engineer intro message doc: messages/${engineerIntroMsg.id}`);
-          await setDoc(doc(db, 'messages', engineerIntroMsg.id), engineerIntroMsg);
-          console.log(`[Firestore] [addBedroomSubmission] Created engineer intro message successfully!`);
-        }
-
-        if (assignedEng) {
-          const updatedCount = (assignedEng.currentTickets || 0) + 1;
-          console.log(`[Firestore] [addBedroomSubmission] Updating engineer: engineers/${assignedEng.id} (currentTickets count = ${updatedCount})`);
-          try {
-            await updateDoc(doc(db, 'engineers', assignedEng.id), { currentTickets: updatedCount });
-            console.log(`[Firestore] [addBedroomSubmission] Updated engineer tickets count successfully!`);
-          } catch (engError) {
-            console.error(`[Firestore] [addBedroomSubmission] Failed to update engineer count:`, engError);
-          }
-        }
-        
         console.log("[Firestore] [addBedroomSubmission] Completed all creation operations successfully!");
       } catch (error) {
         console.error("[Firestore] [addBedroomSubmission] Fatal error in submission process:", error);
@@ -1360,15 +1179,6 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     } else {
       setBedroomSubmissions(prev => [newSubmission, ...prev]);
-      setTickets(prev => [newTicket, ...prev]);
-      setMessages(prev => {
-        const next = [...prev, systemMsg];
-        if (engineerIntroMsg) next.push(engineerIntroMsg);
-        return next;
-      });
-      if (assignedEng) {
-        setEngineers(prev => prev.map(e => e.id === assignedEng.id ? { ...e, currentTickets: (e.currentTickets || 0) + 1 } : e));
-      }
     }
 
     return newSubmission;
@@ -1574,6 +1384,17 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
         const db = getDb();
         await setDoc(doc(db, 'tickets', ticketId), newTicket);
         
+        // Also update original request/submission with the ticketId
+        try {
+          if (type === 'design_request') {
+            await updateDoc(doc(db, 'designRequests', requestId), { ticketId });
+          } else {
+            await updateDoc(doc(db, 'bedroomSubmissions', requestId), { ticketId });
+          }
+        } catch (updateErr) {
+          console.error("Error updating source document with ticketId:", updateErr);
+        }
+        
         // System message
         const systemMsg: Message = {
           id: `msg_welcome_${Date.now()}`,
@@ -1590,6 +1411,11 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     } else {
       setTickets(prev => [newTicket, ...prev]);
+      if (type === 'design_request') {
+        setDesignRequests(prev => prev.map(r => r.id === requestId ? { ...r, ticketId } : r));
+      } else {
+        setBedroomSubmissions(prev => prev.map(r => r.id === requestId ? { ...r, ticketId } : r));
+      }
       const systemMsg: Message = {
         id: `msg_welcome_${Date.now()}`,
         ticketId,
@@ -1619,6 +1445,11 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     );
 
     if (existingTicket) {
+      const req = designRequests.find(r => r.id === existingTicket.requestId || r.requestNumber === existingTicket.trackingId);
+      const sub = bedroomSubmissions.find(s => s.id === existingTicket.requestId || s.requestNumber === existingTicket.trackingId);
+      if ((req && req.status === 'pending') || (sub && sub.status === 'pending')) {
+        return null;
+      }
       return existingTicket;
     }
 
@@ -1630,6 +1461,9 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     );
 
     if (matchedRequest) {
+      if (matchedRequest.status === 'pending') {
+        return null;
+      }
       // Check if ticket exists
       const t = tickets.find(x => x.requestId === matchedRequest.id || x.sourceId === matchedRequest.id);
       if (t) return t;
@@ -1694,6 +1528,9 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     );
 
     if (matchedSubmission) {
+      if (matchedSubmission.status === 'pending') {
+        return null;
+      }
       const t = tickets.find(x => x.requestId === matchedSubmission.id || x.sourceId === matchedSubmission.id);
       if (t) return t;
 

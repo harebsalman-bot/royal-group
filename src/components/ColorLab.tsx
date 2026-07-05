@@ -10,7 +10,7 @@ import { mockColorVariants } from '../data/mockData';
 import { 
   Bed, Layers, Grid, Sparkles, FolderOpen, Tv, Compass, Columns, Home, Lightbulb,
   ChevronLeft, ChevronRight, Check, CheckCircle2, Crown, Loader2, User, Phone, MapPin, Award,
-  Palette, Paintbrush, RefreshCw, MessageSquare
+  Palette, Paintbrush, RefreshCw, MessageSquare, Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -221,12 +221,6 @@ export const ColorLab: React.FC<ColorLabProps> = ({ setActiveTab }) => {
       setColorSuccessRequestNumber(res?.requestNumber || 'RG-' + Math.floor(1000 + Math.random() * 9000));
       setColorSuccessPhone(colorClientPhone.trim());
       setColorSubmittedSuccess(true);
-
-      if (setActiveTab) {
-        setTimeout(() => {
-          setActiveTab('tickets');
-        }, 1500);
-      }
     } catch (err: any) {
       console.error("Color lab submit error:", err);
       setColorFormError('حدث خطأ أثناء إرسال طلب الألوان. يرجى المحاولة لاحقاً.');
@@ -345,12 +339,6 @@ export const ColorLab: React.FC<ColorLabProps> = ({ setActiveTab }) => {
       setSubmitting(false);
       setSubmittedSuccess(true);
       setCopied(false);
-
-      if (setActiveTab) {
-        setTimeout(() => {
-          setActiveTab('tickets');
-        }, 1500);
-      }
     } catch (err: any) {
       console.error("Bedroom Submission Error:", err);
       setFormError('حدث خطأ أثناء إرسال طلبك. يرجى المحاولة مرة أخرى.');
@@ -681,8 +669,8 @@ export const ColorLab: React.FC<ColorLabProps> = ({ setActiveTab }) => {
                   </div>
                   
                   <div className="space-y-1">
-                    <h4 className="text-xs font-black text-white font-sans">تم إرسال لوحة الألوان الملكية!</h4>
-                    <p className="text-[10px] text-gray-400">تم حجز طلب التنسيق الخاص بك بنجاح، وتوليد تذكرة متابعة فورية.</p>
+                    <h4 className="text-xs font-black text-white font-sans font-bold">تم إرسال لوحة الألوان الملكية!</h4>
+                    <p className="text-[10px] text-gray-400">تم حجز طلب التنسيق الخاص بك بنجاح وهو الآن قيد المراجعة والدراسة الفنية من قبل الإدارة.</p>
                   </div>
 
                   {/* Compact dark code panel */}
@@ -699,16 +687,36 @@ export const ColorLab: React.FC<ColorLabProps> = ({ setActiveTab }) => {
                         <span className="text-xs font-black text-[#d4af37] font-mono select-all tracking-wider">{colorSuccessRequestNumber}</span>
                       </div>
                     </div>
+
+                    <div className="flex items-center justify-between bg-[#171714] border border-gray-900 p-2.5 rounded-xl">
+                      <span className="px-2.5 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[9px] font-black">
+                        قيد الانتظار (Pending)
+                      </span>
+                      <div className="text-right">
+                        <span className="block text-[9px] text-gray-500">حالة الطلب</span>
+                        <span className="text-xs font-bold text-gray-300">بانتظار موافقة الإدارة</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between bg-[#171714] border border-gray-900 p-2.5 rounded-xl">
+                      <span className="text-xs font-mono font-bold text-gray-300">
+                        {new Date().toLocaleDateString('ar-IQ', { year: 'numeric', month: 'numeric', day: 'numeric' })}
+                      </span>
+                      <div className="text-right">
+                        <span className="block text-[9px] text-gray-500">تاريخ تقديم الطلب</span>
+                        <span className="text-xs font-bold text-gray-300">تاريخ التسجيل</span>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex flex-col gap-2 pt-1">
                     {setActiveTab && (
                       <button
-                        onClick={() => setActiveTab('tickets')}
+                        onClick={() => setActiveTab('track')}
                         className="w-full py-2.5 bg-[#d4af37] hover:bg-[#b8952b] text-black text-xs font-black rounded-xl transition-all shadow-lg shadow-[#d4af37]/5 flex items-center justify-center gap-1.5"
                       >
-                        <MessageSquare className="w-4 h-4" />
-                        <span>دخول غرف المحادثة الآن</span>
+                        <Search className="w-4 h-4" />
+                        <span>تتبع حالة هذا الطلب</span>
                       </button>
                     )}
                     <button
@@ -1023,8 +1031,8 @@ export const ColorLab: React.FC<ColorLabProps> = ({ setActiveTab }) => {
                   </div>
                   
                   <div className="space-y-1">
-                    <h4 className="text-xs font-black text-white font-sans">تم استلام خياراتك الملكية بنجاح!</h4>
-                    <p className="text-[10px] text-gray-400">لقد تم حفظ تفضيلات غرفة نومك وتوليد رمز تتبع مخصص لمشروعك.</p>
+                    <h4 className="text-xs font-black text-white font-sans font-bold">تم استلام خياراتك الملكية بنجاح!</h4>
+                    <p className="text-[10px] text-gray-400">لقد تم حفظ تفضيلات غرفة نومك وتوليد رمز تتبع مخصص لمشروعك، وهو الآن بانتظار موافقة المهندس المشرف.</p>
                   </div>
 
                   {/* Compact Dark Tracking Box */}
@@ -1049,16 +1057,36 @@ export const ColorLab: React.FC<ColorLabProps> = ({ setActiveTab }) => {
                         <span className="text-xs font-bold text-gray-300">رقم التواصل</span>
                       </div>
                     </div>
+
+                    <div className="flex items-center justify-between bg-[#171714] border border-gray-900 p-2.5 rounded-xl">
+                      <span className="px-2.5 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[9px] font-black">
+                        قيد الانتظار (Pending)
+                      </span>
+                      <div className="text-right">
+                        <span className="block text-[9px] text-gray-500 font-medium">حالة الطلب الحالية</span>
+                        <span className="text-xs font-bold text-gray-300">بانتظار موافقة الإدارة</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between bg-[#171714] border border-gray-900 p-2.5 rounded-xl">
+                      <span className="text-xs font-mono font-bold text-gray-300">
+                        {new Date().toLocaleDateString('ar-IQ', { year: 'numeric', month: 'numeric', day: 'numeric' })}
+                      </span>
+                      <div className="text-right">
+                        <span className="block text-[9px] text-gray-500 font-medium">تاريخ تقديم الطلب</span>
+                        <span className="text-xs font-bold text-gray-300">تاريخ التسجيل</span>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex flex-col gap-2 pt-1.5">
                     {setActiveTab && (
                       <button
-                        onClick={() => setActiveTab('tickets')}
+                        onClick={() => setActiveTab('track')}
                         className="w-full py-2.5 bg-[#d4af37] hover:bg-[#b8952b] text-black text-xs font-black rounded-xl transition-all shadow-lg shadow-[#d4af37]/5 flex items-center justify-center gap-1.5"
                       >
-                        <MessageSquare className="w-4 h-4" />
-                        <span>دخول غرف المحادثة الآن</span>
+                        <Search className="w-4 h-4" />
+                        <span>تتبع حالة هذا الطلب</span>
                       </button>
                     )}
                     <button

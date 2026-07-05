@@ -210,14 +210,35 @@ export const ProjectTickets: React.FC = () => {
     // Client sees the one they searched/selected
     if (selectedTicketId) {
       const t = tickets.find(ticket => ticket.id === selectedTicketId);
-      return t ? [t] : [];
+      if (t) {
+        const req = designRequests.find(r => r.id === t.requestId || r.requestNumber === t.trackingId);
+        const sub = bedroomSubmissions.find(s => s.id === t.requestId || s.requestNumber === t.trackingId);
+        if ((req && req.status === 'pending') || (sub && sub.status === 'pending')) {
+          return [];
+        }
+        return [t];
+      }
+      return [];
     }
 
     return [];
   };
 
   const activeTickets = getFilteredTickets();
-  const selectedTicket = tickets.find(t => t.id === selectedTicketId);
+  
+  const selectedTicket = (() => {
+    if (!selectedTicketId) return undefined;
+    const t = tickets.find(x => x.id === selectedTicketId);
+    if (!t) return undefined;
+    if (currentRole === 'client') {
+      const req = designRequests.find(r => r.id === t.requestId || r.requestNumber === t.trackingId);
+      const sub = bedroomSubmissions.find(s => s.id === t.requestId || s.requestNumber === t.trackingId);
+      if ((req && req.status === 'pending') || (sub && sub.status === 'pending')) {
+        return undefined;
+      }
+    }
+    return t;
+  })();
 
   // Active user unread notifications count
   const getUserNotifications = () => {
@@ -350,6 +371,17 @@ export const ProjectTickets: React.FC = () => {
     if (!targetId) return;
 
     try {
+      // Check if target matches a pending design request or bedroom submission
+      const q = targetId.toUpperCase();
+      const isPendingRequest = designRequests.some(r => r.status === 'pending' && (r.id.toUpperCase() === q || (r.requestNumber && r.requestNumber.toUpperCase() === q) || r.phone === targetId));
+      const isPendingBedroom = bedroomSubmissions.some(s => s.status === 'pending' && (s.id.toUpperCase() === q || (s.requestNumber && s.requestNumber.toUpperCase() === q) || s.clientPhone === targetId));
+
+      if (isPendingRequest || isPendingBedroom) {
+        setClientError('طلبكم الملكي تم استلامه بنجاح وهو الآن بانتظار موافقة الإدارة واعتماد المهندس المشرف لتفعيل غرفة الدردشة والدعم المباشر. يرجى المتابعة لاحقاً.');
+        setSelectedTicketId(null);
+        return;
+      }
+
       const ticket = await findOrCreateTicketByTrackingOrPhone(targetId);
       if (ticket) {
         setSelectedTicketId(ticket.id);
@@ -1063,6 +1095,23 @@ export const ProjectTickets: React.FC = () => {
                     <div className="flex flex-wrap items-center gap-2.5">
                       {getStatusBadge(selectedTicket.status)}
 
+                      {/* Admin-only Engineer Assignment Dropdown */}
+                      {currentRole === 'admin' && (
+                        <div className="flex items-center gap-2 bg-white/5 border border-white/15 px-3 py-1 rounded-xl">
+                          <span className="text-xs text-[#d4af37] font-black">تعيين مهندس:</span>
+                          <select
+                            value={selectedTicket.assignedEngineerId || ''}
+                            onChange={(e) => handleAssignEngineer(e.target.value)}
+                            className="bg-[#171714] text-xs border border-white/10 text-white rounded-lg px-2.5 py-1 font-bold outline-none focus:border-[#d4af37]"
+                          >
+                            <option value="">-- اختر مهندس --</option>
+                            {engineers.map(eng => (
+                              <option key={eng.id} value={eng.id}>{eng.name} ({eng.specialty})</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
                       {/* Ticket Reopen / Close action based on role */}
                       {(currentRole === 'admin' || (currentRole === 'engineer' && selectedTicket.assignedEngineerId === activeEngineerId)) && (
                         <div className="flex gap-1">
@@ -1088,25 +1137,6 @@ export const ProjectTickets: React.FC = () => {
                     </div>
 
                   </div>
-
-                  {/* ADMIN ONLY: ASSIGN TICKET TO ENGINEERS DIRECTLY IN HEADER */}
-                  {currentRole === 'admin' && (
-                    <div className="border-t border-[#d4af37]/10 mt-4 pt-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
-                      <span className="text-gray-300 font-bold">إسناد وتكليف المهندسين:</span>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={selectedTicket.assignedEngineerId || ''}
-                          onChange={(e) => handleAssignEngineer(e.target.value)}
-                          className="bg-[#2a2a26] border border-[#d4af37]/35 text-white rounded-xl px-3 py-1.5 font-semibold text-xs outline-none focus:border-[#d4af37]"
-                        >
-                          <option value="">-- اختر مهندس للتصميم والمتابعة --</option>
-                          {engineers.map(eng => (
-                            <option key={eng.id} value={eng.id}>{eng.name} ({eng.specialty})</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {/* THE CHAT MESSAGES PANEL */}

@@ -72,12 +72,6 @@ export const RequestDesign: React.FC<RequestDesignProps> = ({ setActiveTab }) =>
       setSuccessPhone(phone);
       setStatus('success');
       setCopied(false);
-
-      if (setActiveTab) {
-        setTimeout(() => {
-          setActiveTab('tickets');
-        }, 1500);
-      }
       
       // Reset form fields
       setName('');
@@ -189,6 +183,26 @@ export const RequestDesign: React.FC<RequestDesignProps> = ({ setActiveTab }) =>
                       <div className="text-right">
                         <span className="block text-[10px] text-gray-400 font-medium">رقم الهاتف المسجل للطلب</span>
                         <span className="text-xs font-bold text-gray-800">رقم الاتصال المباشر</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100">
+                      <span className="px-2.5 py-1 rounded bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-black">
+                        قيد الانتظار (Pending)
+                      </span>
+                      <div className="text-right">
+                        <span className="block text-[10px] text-gray-400 font-medium">حالة الطلب الحالية</span>
+                        <span className="text-xs font-bold text-gray-800">بانتظار موافقة الإدارة</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100">
+                      <span className="text-xs font-mono font-bold text-gray-800">
+                        {new Date().toLocaleDateString('ar-IQ', { year: 'numeric', month: 'numeric', day: 'numeric' })}
+                      </span>
+                      <div className="text-right">
+                        <span className="block text-[10px] text-gray-400 font-medium">تاريخ تقديم الطلب</span>
+                        <span className="text-xs font-bold text-gray-800">تاريخ التسجيل</span>
                       </div>
                     </div>
                   </div>

@@ -253,16 +253,9 @@ export const AIDesignAdvisor: React.FC<AIDesignAdvisorProps> = ({ setActiveTab }
         [selectedFile] // Room image uploaded
       );
 
-      // Save ticket id to local storage so ProjectTickets can auto-load it
-      if (result && result.ticketId) {
-        localStorage.setItem('active_client_ticket_id', result.ticketId);
-        localStorage.setItem('force_client_role', 'true');
-      }
-
-      // Transition client directly to the chat room
-      if (setActiveTab) {
-        setActiveTab('tickets');
-      }
+      setSuccessRequestNumber(result?.requestNumber || 'RG-PENDING');
+      setFormStatus('success');
+      setShowRequestForm(true);
     } catch (err: any) {
       console.error("Auto execute design failed:", err);
       alert("حدث خطأ أثناء تسجيل وتنفيذ التصميم تلقائياً: " + (err.message || err));
@@ -625,16 +618,38 @@ export const AIDesignAdvisor: React.FC<AIDesignAdvisorProps> = ({ setActiveTab }
                     {/* Tracking Box */}
                     <div className="w-full max-w-md bg-gray-50 rounded-2xl border border-gray-150 p-6 space-y-4 text-right">
                       <h4 className="text-xs font-black text-[#1e1e1a] border-r-2 border-[#d4af37] pr-2">معلومات المتابعة الفورية</h4>
-                      <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100">
-                        <button 
-                          onClick={handleCopy}
-                          className="px-3 py-1 bg-[#171714] hover:bg-[#b8952b] text-white hover:text-[#171714] text-[10px] font-bold rounded-lg transition-all"
-                        >
-                          {copied ? 'تم النسخ!' : 'نسخ الرمز'}
-                        </button>
-                        <div className="text-right">
-                          <span className="block text-[10px] text-gray-400 font-medium">رمز تتبع الطلب الموحد</span>
-                          <span className="text-xs font-black text-[#d4af37] font-mono select-all tracking-wider">{successRequestNumber}</span>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100">
+                          <button 
+                            onClick={handleCopy}
+                            className="px-3 py-1 bg-[#171714] hover:bg-[#b8952b] text-white hover:text-[#171714] text-[10px] font-bold rounded-lg transition-all"
+                          >
+                            {copied ? 'تم النسخ!' : 'نسخ الرمز'}
+                          </button>
+                          <div className="text-right">
+                            <span className="block text-[10px] text-gray-400 font-medium">رمز تتبع الطلب الموحد</span>
+                            <span className="text-xs font-black text-[#d4af37] font-mono select-all tracking-wider">{successRequestNumber}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100">
+                          <span className="px-2.5 py-1 rounded bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-black">
+                            قيد الانتظار (Pending)
+                          </span>
+                          <div className="text-right">
+                            <span className="block text-[10px] text-gray-400 font-medium">حالة الطلب الحالية</span>
+                            <span className="text-xs font-bold text-gray-800">بانتظار موافقة الإدارة</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100">
+                          <span className="text-xs font-mono font-bold text-gray-800">
+                            {new Date().toLocaleDateString('ar-IQ', { year: 'numeric', month: 'numeric', day: 'numeric' })}
+                          </span>
+                          <div className="text-right">
+                            <span className="block text-[10px] text-gray-400 font-medium">تاريخ تقديم الطلب</span>
+                            <span className="text-xs font-bold text-gray-800">تاريخ التسجيل</span>
+                          </div>
                         </div>
                       </div>
                     </div>

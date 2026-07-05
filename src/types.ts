@@ -56,8 +56,8 @@ export interface DesignRequest {
   adminNotes?: string;
   viewed?: boolean;
   ticketId?: string;
-  assignedEngineerId?: string;
-  assignedEngineerName?: string;
+  assignedEngineerId?: string | null;
+  assignedEngineerName?: string | null;
   assignedAt?: number;
 }
 
@@ -111,8 +111,8 @@ export interface BedroomSubmission {
   adminNotes?: string;
   viewed?: boolean;
   ticketId?: string;
-  assignedEngineerId?: string;
-  assignedEngineerName?: string;
+  assignedEngineerId?: string | null;
+  assignedEngineerName?: string | null;
   assignedAt?: number;
 }
 
@@ -147,8 +147,8 @@ export interface Ticket {
   status: TicketStatus;
   createdAt: number;
   updatedAt: number;
-  assignedEngineerId?: string;
-  assignedEngineerName?: string;
+  assignedEngineerId?: string | null;
+  assignedEngineerName?: string | null;
   assignedAt?: number;
   sourceId?: string;
   sourceType?: 'design_request' | 'bedroom_submission' | 'direct';

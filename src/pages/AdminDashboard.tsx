@@ -364,6 +364,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     await handleAssignAndApprove(chosenEng.id);
   };
 
+  // Direct assignment from details modal
+  const handleDirectAssignEngineer = async (engineerId: string | null) => {
+    const isStandard = !!selectedRequest;
+    const item = selectedRequest || selectedSubmission;
+    if (!item) return;
+
+    try {
+      setGlobalLoading(true);
+      const fields: any = {};
+      if (engineerId) {
+        const eng = engineers?.find(e => e.id === engineerId);
+        if (eng) {
+          fields.assignedEngineerId = eng.id;
+          fields.assignedEngineerName = eng.name;
+          fields.assignedAt = Date.now();
+        }
+      } else {
+        fields.assignedEngineerId = null;
+        fields.assignedEngineerName = null;
+        fields.assignedAt = null;
+      }
+
+      if (isStandard) {
+        await updateDesignRequestStatus(item.id, item.status, fields);
+        setSelectedRequest(prev => prev ? { ...prev, ...fields } : null);
+      } else {
+        await updateBedroomSubmissionStatus(item.id, item.status, fields);
+        setSelectedSubmission(prev => prev ? { ...prev, ...fields } : null);
+      }
+
+      // Also assign associated ticket if present
+      if (item.ticketId) {
+        if (engineerId) {
+          const eng = engineers?.find(e => e.id === engineerId);
+          if (eng) {
+            await assignTicket(item.ticketId, eng.id, eng.name);
+          }
+        } else {
+          await assignTicket(item.ticketId, '', '');
+        }
+      }
+
+      showFeedback('تم تحديث تعيين المهندس بنجاح!');
+    } catch (err) {
+      console.error(err);
+      showFeedback('فشل تحديث تعيين المهندس.', 'error');
+    } finally {
+      setGlobalLoading(false);
+    }
+  };
+
   // GENERIC STATUS UPDATER
   const handleStatusChange = async (id: string, type: 'standard' | 'bedroom', newStatus: RequestStatus) => {
     if (newStatus === 'Rejected') {
@@ -2680,6 +2731,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                         {translateStatus(selectedRequest ? selectedRequest.status : selectedSubmission!.status)}
                       </span>
                     </p>
+                    {/* ENGINEER ASSIGNMENT CONTROL (ADMIN ONLY) */}
+                    <div className="pt-3 border-t border-gray-200/65 space-y-1.5 mt-2">
+                      <span className="font-extrabold text-[#aa7c11] block text-[11px]">المهندس المسؤول عن التصميم والمتابعة:</span>
+                      <select
+                        value={(selectedRequest ? selectedRequest.assignedEngineerId : selectedSubmission?.assignedEngineerId) || ''}
+                        onChange={(e) => handleDirectAssignEngineer(e.target.value || null)}
+                        className="w-full p-2 bg-white border border-gray-300 rounded-xl text-xs outline-none focus:border-[#d4af37] font-bold text-gray-800"
+                      >
+                        <option value="">-- لم يتم تعيين مهندس (معلق) --</option>
+                        {engineers?.map(eng => (
+                          <option key={eng.id} value={eng.id}>م. {eng.name} ({eng.specialty || eng.specialization || 'تصميم'})</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
 
                   <div className="space-y-2.5">
