@@ -15,8 +15,41 @@ import {
   initializeDynamicFirebase, isFirebaseReady, getDb, getAuthService, getFirebaseApp, getActiveConfig, handleFirestoreError, OperationType 
 } from '../firebase';
 import { 
-  collection, doc, getDocs, setDoc, updateDoc, deleteDoc, getDoc, query, orderBy, onSnapshot 
+  collection, doc, getDocs, setDoc as firestoreSetDoc, updateDoc as firestoreUpdateDoc, deleteDoc, getDoc, query, orderBy, onSnapshot 
 } from 'firebase/firestore';
+
+// Helper to recursively remove undefined fields and values before writing to Firestore
+const cleanUndefined = (obj: any): any => {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanUndefined(item));
+  }
+  if (typeof obj === 'object') {
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanUndefined(value);
+      }
+    }
+    return cleaned;
+  }
+  return obj;
+};
+
+const setDoc = async (reference: any, data: any, options?: any) => {
+  const cleanedData = cleanUndefined(data);
+  if (options) {
+    return firestoreSetDoc(reference, cleanedData, options);
+  }
+  return firestoreSetDoc(reference, cleanedData);
+};
+
+const updateDoc = async (reference: any, data: any) => {
+  const cleanedData = cleanUndefined(data);
+  return firestoreUpdateDoc(reference, cleanedData);
+};
 
 export const seedBedroomOptions: Omit<BedroomOption, 'id' | 'createdAt'>[] = [
   {
