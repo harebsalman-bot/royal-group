@@ -41,6 +41,15 @@ export const ProjectTickets: React.FC = () => {
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [clientError, setClientError] = useState('');
   const [clientSuccess, setClientSuccess] = useState('');
+  const [searchedRequest, setSearchedRequest] = useState<{
+    id: string;
+    requestNumber: string;
+    status: string;
+    type: string;
+    assignedEngineerName?: string | null;
+    ticketId?: string | null;
+    createdAt?: number;
+  } | null>(null);
 
   // Engineer States
   const [activeEngineerId, setActiveEngineerId] = useState<string | null>(null);
@@ -367,25 +376,55 @@ export const ProjectTickets: React.FC = () => {
     e.preventDefault();
     setClientError('');
     setClientSuccess('');
+    setSearchedRequest(null);
     const targetId = clientSearchId.trim();
     if (!targetId) return;
 
     try {
-      // Check if target matches a pending design request or bedroom submission
       const q = targetId.toUpperCase();
-      const isPendingRequest = designRequests.some(r => r.status === 'pending' && (r.id.toUpperCase() === q || (r.requestNumber && r.requestNumber.toUpperCase() === q) || r.phone === targetId));
-      const isPendingBedroom = bedroomSubmissions.some(s => s.status === 'pending' && (s.id.toUpperCase() === q || (s.requestNumber && s.requestNumber.toUpperCase() === q) || s.clientPhone === targetId));
+      
+      const dReq = designRequests.find(r => 
+        r.id.toUpperCase() === q || 
+        (r.requestNumber && r.requestNumber.toUpperCase() === q) || 
+        r.phone === targetId
+      );
+      
+      const bSub = bedroomSubmissions.find(s => 
+        s.id.toUpperCase() === q || 
+        (s.requestNumber && s.requestNumber.toUpperCase() === q) || 
+        s.clientPhone === targetId
+      );
 
-      if (isPendingRequest || isPendingBedroom) {
-        setClientError('طلبكم الملكي تم استلامه بنجاح وهو الآن بانتظار موافقة الإدارة واعتماد المهندس المشرف لتفعيل غرفة الدردشة والدعم المباشر. يرجى المتابعة لاحقاً.');
-        setSelectedTicketId(null);
-        return;
-      }
+      const matched = dReq || bSub;
 
-      const ticket = await findOrCreateTicketByTrackingOrPhone(targetId);
-      if (ticket) {
-        setSelectedTicketId(ticket.id);
-        setClientSuccess('تم العثور على التذكرة/الطلب بنجاح والدخول إلى الغرفة الخاصة.');
+      if (matched) {
+        const isPending = matched.status === 'pending';
+        const typeLabel = dReq ? `طلب تصميم - ${dReq.projectType}` : 'تصميم غرفة نوم مخصص';
+        const trackingNum = matched.requestNumber || matched.id;
+        
+        setSearchedRequest({
+          id: matched.id,
+          requestNumber: trackingNum,
+          status: matched.status,
+          type: typeLabel,
+          assignedEngineerName: matched.assignedEngineerName || null,
+          ticketId: matched.ticketId || null,
+          createdAt: matched.createdAt
+        });
+
+        if (isPending) {
+          setClientSuccess('تم العثور على طلبكم الملكي بنجاح وهو الآن بانتظار موافقة الإدارة وتعيين المهندس.');
+          setSelectedTicketId(null);
+          return;
+        }
+
+        const ticket = await findOrCreateTicketByTrackingOrPhone(targetId);
+        if (ticket) {
+          setClientSuccess('تم العثور على التذكرة/الطلب المعتمد بنجاح! اضغط على زر "فتح غرفة الدردشة" للبدء.');
+        } else {
+          setClientError('تمت الموافقة على طلبك ولكن لم نتمكن من تحديد تذكرة مفعلة له. يرجى مراجعة الدعم.');
+          setSelectedTicketId(null);
+        }
       } else {
         setClientError('لم نتمكن من العثور على تذكرة أو طلب بهذا الرقم أو رقم الهاتف. يرجى مراجعة المدخلات.');
         setSelectedTicketId(null);
@@ -589,6 +628,66 @@ export const ProjectTickets: React.FC = () => {
                   <div className="p-3.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-100 text-xs font-semibold flex items-start gap-2 leading-relaxed">
                     <CheckCircle2 className="w-4.5 h-4.5 shrink-0 text-emerald-600 mt-0.5" />
                     <span>{clientSuccess}</span>
+                  </div>
+                )}
+
+                {searchedRequest && (
+                  <div className="mt-4 p-4 rounded-xl border border-gray-100 bg-gray-50 space-y-3.5 text-right text-xs">
+                    <div className="flex items-center justify-between border-b border-gray-200/50 pb-2">
+                      <span className="text-gray-400 font-bold">نوع الطلب:</span>
+                      <span className="text-gray-900 font-black">{searchedRequest.type}</span>
+                    </div>
+                    
+                    <div className="flex items-center justify-between border-b border-gray-200/50 pb-2">
+                      <span className="text-gray-400 font-bold">رمز التتبع:</span>
+                      <span className="text-[#d4af37] font-mono font-black select-all tracking-wide">{searchedRequest.requestNumber}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between border-b border-gray-200/50 pb-2">
+                      <span className="text-gray-400 font-bold">حالة الطلب:</span>
+                      {searchedRequest.status === 'pending' ? (
+                        <span className="px-2.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-black">
+                          قيد الانتظار والمراجعة (Pending)
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black">
+                          تم القبول والاعتماد (Approved)
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between border-b border-gray-200/50 pb-2">
+                      <span className="text-gray-400 font-bold">المهندس المصمم:</span>
+                      <span className="text-gray-900 font-bold">
+                        {searchedRequest.status === 'pending' 
+                          ? 'بانتظار الموافقة والتعيين' 
+                          : searchedRequest.assignedEngineerName 
+                            ? `م. ${searchedRequest.assignedEngineerName}` 
+                            : 'بانتظار تعيين مهندس'
+                        }
+                      </span>
+                    </div>
+
+                    {searchedRequest.status !== 'pending' && searchedRequest.ticketId && (
+                      <div className="pt-2">
+                        <button
+                          onClick={() => {
+                            setSelectedTicketId(searchedRequest.ticketId);
+                            setClientSuccess('تم الدخول لغرفة المحادثة والدعم الخاص بنجاح.');
+                          }}
+                          className="w-full py-2.5 bg-gradient-to-r from-[#171714] to-[#3a3a35] text-[#d4af37] hover:text-white border border-[#d4af37]/30 rounded-xl text-xs font-black shadow-lg transition-all flex items-center justify-center gap-2"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                          فتح غرفة الدردشة والمتابعة
+                        </button>
+                      </div>
+                    )}
+
+                    {searchedRequest.status === 'pending' && (
+                      <div className="p-3 bg-amber-50/50 border border-amber-200/50 text-amber-800 text-[11px] leading-relaxed rounded-lg">
+                        سيتم تفعيل غرفة المتابعة الفنية والدردشة المباشرة مع المهندس فور موافقة الإدارة على طلبكم الملكي وتعيين المهندس المصمم. يرجى المتابعة لاحقاً.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1235,7 +1334,7 @@ export const ProjectTickets: React.FC = () => {
                                     return (
                                       <div key={idx} className="relative group overflow-hidden rounded-xl border border-[#d4af37]/25 max-w-full cursor-pointer bg-black/5 mt-2">
                                         <img 
-                                          src={att.url} 
+                                          src={att.url || undefined} 
                                           alt={att.name || "صورة مرفقة"} 
                                           className="max-h-56 w-full object-contain rounded-xl transition-transform duration-300 group-hover:scale-[1.02]"
                                           referrerPolicy="no-referrer"

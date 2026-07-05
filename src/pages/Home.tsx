@@ -237,7 +237,7 @@ export const Home: React.FC<HomeProps> = ({ setActiveTab }) => {
             >
               <div className="h-64 relative overflow-hidden bg-[#232321]">
                 <img 
-                  src={project.coverImage} 
+                  src={project.coverImage || undefined} 
                   alt={project.title} 
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   referrerPolicy="no-referrer"

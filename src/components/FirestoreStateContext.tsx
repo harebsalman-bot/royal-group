@@ -1469,7 +1469,7 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     const q = queryStr.trim().toUpperCase();
     if (!q) return null;
 
-    // 1. Search tickets state
+    // Search existing tickets first
     let existingTicket = tickets.find(t => 
       t.id.toUpperCase() === q || 
       t.clientPhone === queryStr || 
@@ -1486,137 +1486,25 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       return existingTicket;
     }
 
-    // 2. Search designRequests
-    const matchedRequest = designRequests.find(r => 
+    // If no ticket exists but we have an approved request, we find the ticket for it
+    const req = designRequests.find(r => 
       (r.requestNumber && r.requestNumber.toUpperCase() === q) || 
       r.id.toUpperCase() === q || 
       r.phone === queryStr
     );
-
-    if (matchedRequest) {
-      if (matchedRequest.status === 'pending') {
-        return null;
-      }
-      // Check if ticket exists
-      const t = tickets.find(x => x.requestId === matchedRequest.id || x.sourceId === matchedRequest.id);
+    if (req && req.status !== 'pending') {
+      const t = tickets.find(x => x.requestId === req.id || x.sourceId === req.id);
       if (t) return t;
-
-      const ticketId = await generateTicketId();
-      const newTicket: Ticket = {
-        id: ticketId,
-        requestId: matchedRequest.id,
-        trackingId: matchedRequest.requestNumber || matchedRequest.id,
-        relatedRequestNumber: matchedRequest.requestNumber,
-        sourceId: matchedRequest.id,
-        sourceType: 'design_request',
-        clientName: matchedRequest.name,
-        clientPhone: matchedRequest.phone,
-        title: `طلب تصميم - ${matchedRequest.projectType}`,
-        subject: `طلب تصميم - ${matchedRequest.projectType}`,
-        description: `تذكرة تم إنشاؤها تلقائياً لطلب تصميم رقم ${matchedRequest.requestNumber || matchedRequest.id}`,
-        status: 'open',
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      };
-
-      if (isFirebaseConnected) {
-        try {
-          const db = getDb();
-          await setDoc(doc(db, 'tickets', ticketId), newTicket);
-          
-          const systemMsg: Message = {
-            id: `msg_welcome_${Date.now()}`,
-            ticketId,
-            senderId: 'admin',
-            senderName: 'إدارة رويال جروب',
-            senderRole: 'admin',
-            content: `أهلاً بك يا ${newTicket.clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
-            createdAt: Date.now()
-          };
-          await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
-        } catch (error) {
-          console.error("Error creating ticket via client search:", error);
-        }
-      } else {
-        setTickets(prev => [newTicket, ...prev]);
-        const systemMsg: Message = {
-          id: `msg_welcome_${Date.now()}`,
-          ticketId,
-          senderId: 'admin',
-          senderName: 'إدارة رويال جروب',
-          senderRole: 'admin',
-          content: `أهلاً بك يا ${newTicket.clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
-          createdAt: Date.now()
-        };
-        setMessages(prev => [...prev, systemMsg]);
-      }
-      return newTicket;
     }
 
-    // 3. Search bedroomSubmissions
-    const matchedSubmission = bedroomSubmissions.find(s => 
+    const sub = bedroomSubmissions.find(s => 
       (s.requestNumber && s.requestNumber.toUpperCase() === q) || 
       s.id.toUpperCase() === q || 
       s.clientPhone === queryStr
     );
-
-    if (matchedSubmission) {
-      if (matchedSubmission.status === 'pending') {
-        return null;
-      }
-      const t = tickets.find(x => x.requestId === matchedSubmission.id || x.sourceId === matchedSubmission.id);
+    if (sub && sub.status !== 'pending') {
+      const t = tickets.find(x => x.requestId === sub.id || x.sourceId === sub.id);
       if (t) return t;
-
-      const ticketId = await generateTicketId();
-      const newTicket: Ticket = {
-        id: ticketId,
-        requestId: matchedSubmission.id,
-        trackingId: matchedSubmission.requestNumber || matchedSubmission.id,
-        relatedRequestNumber: matchedSubmission.requestNumber,
-        sourceId: matchedSubmission.id,
-        sourceType: 'bedroom_submission',
-        clientName: matchedSubmission.clientName,
-        clientPhone: matchedSubmission.clientPhone,
-        title: `تصميم غرفة نوم مخصص`,
-        subject: `تصميم غرفة نوم مخصص`,
-        description: `تذكرة تم إنشاؤها تلقائياً لطلب تصميم غرفة نوم رقم ${matchedSubmission.requestNumber || matchedSubmission.id}`,
-        status: 'open',
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      };
-
-      if (isFirebaseConnected) {
-        try {
-          const db = getDb();
-          await setDoc(doc(db, 'tickets', ticketId), newTicket);
-          
-          const systemMsg: Message = {
-            id: `msg_welcome_${Date.now()}`,
-            ticketId,
-            senderId: 'admin',
-            senderName: 'إدارة رويال جروب',
-            senderRole: 'admin',
-            content: `أهلاً بك يا ${newTicket.clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
-            createdAt: Date.now()
-          };
-          await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
-        } catch (error) {
-          console.error("Error creating ticket via client search bedroom:", error);
-        }
-      } else {
-        setTickets(prev => [newTicket, ...prev]);
-        const systemMsg: Message = {
-          id: `msg_welcome_${Date.now()}`,
-          ticketId,
-          senderId: 'admin',
-          senderName: 'إدارة رويال جروب',
-          senderRole: 'admin',
-          content: `أهلاً بك يا ${newTicket.clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
-          createdAt: Date.now()
-        };
-        setMessages(prev => [...prev, systemMsg]);
-      }
-      return newTicket;
     }
 
     return null;

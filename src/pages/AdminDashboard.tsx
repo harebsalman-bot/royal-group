@@ -1102,7 +1102,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   {bedroomOptions.map(opt => (
                     <div key={opt.id} className="bg-gray-50 p-3 rounded-2xl border border-gray-100 flex gap-3 relative">
                       <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 border border-gray-200">
-                        <img src={opt.image} alt={opt.name} className="w-full h-full object-cover" />
+                        <img src={opt.image || undefined} alt={opt.name} className="w-full h-full object-cover" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <span className="text-[9px] font-black px-1.5 py-0.5 bg-[#d4af37]/10 text-[#aa7c11] rounded">
@@ -1151,7 +1151,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     .map((p, pIdx, arr) => (
                       <div key={p.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between gap-3 relative hover:shadow-sm transition-all">
                         <div className="flex items-center gap-3">
-                          <img src={p.coverImage} className="w-14 h-14 object-cover rounded-lg border border-gray-200 shadow-inner" />
+                          <img src={p.coverImage || undefined} className="w-14 h-14 object-cover rounded-lg border border-gray-200 shadow-inner" />
                           <div>
                             <h5 className="text-xs font-bold text-gray-900">{p.title}</h5>
                             <p className="text-[10px] text-gray-400">{p.city} • {p.area}</p>
@@ -1241,7 +1241,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     .map((p, pIdx, arr) => (
                       <div key={p.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between gap-3 relative hover:shadow-sm transition-all">
                         <div className="flex items-center gap-3">
-                          <img src={p.coverImage} className="w-14 h-14 object-cover rounded-lg border border-gray-200 shadow-inner" />
+                          <img src={p.coverImage || undefined} className="w-14 h-14 object-cover rounded-lg border border-gray-200 shadow-inner" />
                           <div>
                             <h5 className="text-xs font-bold text-gray-900">{p.title}</h5>
                             <p className="text-[10px] text-gray-400">{p.city} • {p.area}</p>
@@ -1328,7 +1328,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     .map((p, pIdx, arr) => (
                       <div key={p.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between gap-3 relative hover:shadow-sm transition-all">
                         <div className="flex items-center gap-3">
-                          <img src={p.coverImage} className="w-14 h-14 object-cover rounded-lg border border-gray-200 shadow-inner" />
+                          <img src={p.coverImage || undefined} className="w-14 h-14 object-cover rounded-lg border border-gray-200 shadow-inner" />
                           <div>
                             <h5 className="text-xs font-bold text-gray-900">{p.title}</h5>
                             <p className="text-[10px] text-gray-400">{p.city} • {p.area}</p>
@@ -1415,7 +1415,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     .map((p, pIdx, arr) => (
                       <div key={p.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between gap-3 relative hover:shadow-sm transition-all">
                         <div className="flex items-center gap-3">
-                          <img src={p.coverImage} className="w-14 h-14 object-cover rounded-lg border border-gray-200 shadow-inner" />
+                          <img src={p.coverImage || undefined} className="w-14 h-14 object-cover rounded-lg border border-gray-200 shadow-inner" />
                           <div>
                             <h5 className="text-xs font-bold text-gray-900">{p.title}</h5>
                             <p className="text-[10px] text-gray-400">{p.city} • {p.area}</p>
@@ -1496,7 +1496,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 .map((p, pIdx, arr) => (
                   <div key={p.id} className="bg-white rounded-2xl border border-gray-150 p-4 shadow-sm flex flex-col justify-between space-y-4 hover:shadow-md transition-all">
                     <div className="flex gap-3 text-right">
-                      <img src={p.coverImage} className="w-16 h-16 rounded-xl object-cover border" />
+                      <img src={p.coverImage || undefined} className="w-16 h-16 rounded-xl object-cover border" />
                       <div className="space-y-1 flex-1 min-w-0">
                         <span className="px-2 py-0.5 bg-[#d4af37]/10 text-[#d4af37] text-[9px] font-black rounded">{p.category}</span>
                         <h4 className="text-xs font-bold text-gray-900 truncate">{p.title}</h4>

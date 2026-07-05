@@ -839,7 +839,7 @@ export const ColorLab: React.FC<ColorLabProps> = ({ setActiveTab }) => {
                         {/* Image Frame */}
                         <div className="aspect-[4/3] w-full overflow-hidden relative bg-black/40">
                           <img 
-                            src={opt.image} 
+                            src={opt.image || undefined} 
                             alt={opt.name} 
                             referrerPolicy="no-referrer"
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
@@ -931,7 +931,7 @@ export const ColorLab: React.FC<ColorLabProps> = ({ setActiveTab }) => {
                       {/* Mini Image Preview */}
                       <div className="w-12 h-12 rounded-xl overflow-hidden bg-black/50 border border-gray-800 shrink-0">
                         {selected ? (
-                          <img src={selected.image} alt={selected.name} className="w-full h-full object-cover" />
+                          <img src={selected.image || undefined} alt={selected.name} className="w-full h-full object-cover" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-gray-600">
                             {React.createElement(sec.icon, { className: "w-5 h-5" })}

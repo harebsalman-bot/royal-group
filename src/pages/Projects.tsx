@@ -94,7 +94,7 @@ export const Projects: React.FC = () => {
                 >
                   <div className="h-64 relative overflow-hidden bg-[#232321]">
                     <img 
-                      src={project.coverImage} 
+                      src={project.coverImage || undefined} 
                       alt={project.title} 
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       referrerPolicy="no-referrer"
@@ -218,7 +218,7 @@ export const Projects: React.FC = () => {
                       {activeProject.images.map((img, idx) => (
                         <div key={idx} className="relative h-44 rounded-xl overflow-hidden border border-gray-100 shadow-sm bg-[#232321]">
                           <img 
-                            src={img} 
+                            src={img || undefined} 
                             alt={`${activeProject.title} ${idx + 1}`} 
                             className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
                             referrerPolicy="no-referrer"
