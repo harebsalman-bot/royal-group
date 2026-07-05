@@ -578,14 +578,15 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
         // Fallback if auth is not initialized
       }
 
+      console.log("========== FIREBASE DEBUG ==========");
       console.log("FIREBASE CONFIG", getActiveConfig());
       try {
-        const appInstance = getFirebaseApp();
-        console.log("FIRESTORE APP", appInstance.options.projectId);
+        console.log("FIRESTORE APP", getFirebaseApp().options);
       } catch (e) {
         console.error("Could not log Firestore App options:", e);
       }
       console.log("FIRESTORE DATABASE ID", (db as any)._databaseId || db);
+      console.log("===================================");
 
       console.log("PROJECT PAYLOAD RAW", projectData);
       console.log("PROJECT PAYLOAD JSON", JSON.stringify(projectData, null, 2));
