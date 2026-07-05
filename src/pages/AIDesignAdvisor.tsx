@@ -41,6 +41,7 @@ export const AIDesignAdvisor: React.FC<AIDesignAdvisorProps> = ({ setActiveTab }
   const [errorMessage, setErrorMessage] = useState('');
 
   // Request Execution states
+  const [isExecutingDesign, setIsExecutingDesign] = useState(false);
   const [showRequestForm, setShowRequestForm] = useState(false);
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
@@ -223,6 +224,50 @@ export const AIDesignAdvisor: React.FC<AIDesignAdvisorProps> = ({ setActiveTab }
       console.error("Execution request failed:", err);
       setFormStatus('error');
       setFormError(err.message || 'حدث خطأ أثناء تسجيل طلب التنفيذ، يرجى المحاولة لاحقاً.');
+    }
+  };
+
+  // Automated design execution (No forms or extra steps)
+  const handleAutoExecuteDesign = async () => {
+    if (!selectedFile) return;
+
+    try {
+      setIsExecutingDesign(true);
+
+      const clientNamePlaceholder = `عميل المستشار الذكي #${Math.floor(100 + Math.random() * 900)}`;
+      const clientPhonePlaceholder = "07704679311";
+
+      const aiNote = `[مستشار التصميم الذكي - تنفيذ فوري تلقائي]\n\nالمدينة: بغداد\nالمساحة: غير محددة\nالميزانية: غير محددة\n\nتوصيات التصميم بالكامل:\n\n${designReport}`;
+
+      const result = await addDesignRequest(
+        {
+          name: clientNamePlaceholder,
+          phone: clientPhonePlaceholder,
+          city: "بغداد",
+          projectType: 'استشارة الذكاء الاصطناعي',
+          area: 'غير محدد',
+          budget: 'غير محدد',
+          adminNotes: aiNote
+        },
+        [], // No plans
+        [selectedFile] // Room image uploaded
+      );
+
+      // Save ticket id to local storage so ProjectTickets can auto-load it
+      if (result && result.ticketId) {
+        localStorage.setItem('active_client_ticket_id', result.ticketId);
+        localStorage.setItem('force_client_role', 'true');
+      }
+
+      // Transition client directly to the chat room
+      if (setActiveTab) {
+        setActiveTab('tickets');
+      }
+    } catch (err: any) {
+      console.error("Auto execute design failed:", err);
+      alert("حدث خطأ أثناء تسجيل وتنفيذ التصميم تلقائياً: " + (err.message || err));
+    } finally {
+      setIsExecutingDesign(false);
     }
   };
 
@@ -512,11 +557,21 @@ export const AIDesignAdvisor: React.FC<AIDesignAdvisorProps> = ({ setActiveTab }
               {/* Action Ribbon */}
               <div className="pt-8 border-t border-gray-100 flex flex-wrap gap-4 items-center justify-center">
                 <button
-                  onClick={() => setShowRequestForm(true)}
-                  className="px-8 py-4 bg-[#171714] text-white hover:text-[#d4af37] border border-transparent hover:border-[#d4af37]/40 text-xs font-black rounded-xl transition-all shadow-xl hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2 cursor-pointer"
+                  onClick={handleAutoExecuteDesign}
+                  disabled={isExecutingDesign}
+                  className="px-8 py-4 bg-[#171714] text-white hover:text-[#d4af37] border border-transparent hover:border-[#d4af37]/40 text-xs font-black rounded-xl transition-all shadow-xl hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
-                  <Sparkles className="w-4 h-4 text-[#d4af37]" />
-                  <span>طلب تنفيذ هذا التصميم فورا</span>
+                  {isExecutingDesign ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-[#d4af37]" />
+                      <span>جاري تنفيذ هذا التصميم...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 text-[#d4af37]" />
+                      <span>تنفيذ هذا التصميم</span>
+                    </>
+                  )}
                 </button>
                 <button
                   onClick={() => {

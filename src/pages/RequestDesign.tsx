@@ -64,10 +64,20 @@ export const RequestDesign: React.FC<RequestDesignProps> = ({ setActiveTab }) =>
         imageFiles
       );
 
+      if (result && result.ticketId) {
+        localStorage.setItem('active_client_ticket_id', result.ticketId);
+      }
+
       setSuccessRequestNumber(result?.requestNumber || '');
       setSuccessPhone(phone);
       setStatus('success');
       setCopied(false);
+
+      if (setActiveTab) {
+        setTimeout(() => {
+          setActiveTab('tickets');
+        }, 1500);
+      }
       
       // Reset form fields
       setName('');

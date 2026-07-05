@@ -5,11 +5,11 @@
 
 import React, { useState } from 'react';
 import { useFirebaseState } from '../components/FirestoreStateContext';
-import { Project, ColorVariant, DesignRequest, BedroomOption, BedroomSubmission, RequestStatus, RejectionReason } from '../types';
+import { Project, ColorVariant, DesignRequest, BedroomOption, BedroomSubmission, RequestStatus, RejectionReason, Engineer, TicketStatus } from '../types';
 import { 
   Plus, Edit2, Trash2, Check, Star, Settings, Image as ImageIcon, Link as LinkIcon, 
   MapPin, MessageSquare, ClipboardList, Palette, Sliders, LogOut, FileText, Loader2, Save,
-  Crown, Phone, X, Calendar, User, CheckCircle2, AlertTriangle, ExternalLink
+  Crown, Phone, X, Calendar, User, CheckCircle2, AlertTriangle, ExternalLink, Mail, Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -34,15 +34,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const {
     isFirebaseConnected, projects, categories, colorVariants, designRequests, 
     companySettings, socialLinks, bedroomOptions, bedroomSubmissions,
+    engineers, addEngineer, updateEngineer, deleteEngineer,
     addProject, updateProject, deleteProject, 
     updateDesignRequestStatus, updateCompanySettings, updateSocialLinks, 
     addColorVariant, deleteColorVariant, uploadFile,
     addBedroomOption, updateBedroomOption, deleteBedroomOption,
-    updateBedroomSubmissionStatus, deleteBedroomSubmission
+    updateBedroomSubmissionStatus, deleteBedroomSubmission,
+    tickets, messages, updateTicketStatus, assignTicket, deleteTicket, sendTicketMessage
   } = useFirebaseState();
 
   // Navigation Subtabs
-  const [activeSubTab, setActiveSubTab] = useState<'dashboard' | 'bedrooms' | 'kitchens' | 'dressing' | 'wood' | 'projects' | 'requests' | 'settings'>('dashboard');
+  const [activeSubTab, setActiveSubTab] = useState<'dashboard' | 'bedrooms' | 'kitchens' | 'dressing' | 'wood' | 'projects' | 'requests' | 'settings' | 'engineers' | 'tickets'>('dashboard');
 
   // Global loading / feedback states
   const [globalLoading, setGlobalLoading] = useState(false);
@@ -114,10 +116,98 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [socialTk, setSocialTk] = useState(socialLinks.tiktok);
   const [socialYt, setSocialYt] = useState(socialLinks.youtube);
 
+  // Engineer Management state variables
+  const [editingEngineer, setEditingEngineer] = useState<Engineer | null>(null);
+  const [engName, setEngName] = useState('');
+  const [engEmail, setEngEmail] = useState('');
+  const [engPhone, setEngPhone] = useState('');
+  const [engSpecialization, setEngSpecialization] = useState('');
+  const [engActive, setEngActive] = useState(true);
+  const [engCurrentTickets, setEngCurrentTickets] = useState(0);
+  const [engCurrentProjects, setEngCurrentProjects] = useState(0);
+  const [showEngineerForm, setShowEngineerForm] = useState(false);
+
+  // Engineer assignment modal state
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignTarget, setAssignTarget] = useState<{ id: string; type: 'standard' | 'bedroom' } | null>(null);
+
   // Unified Central Inbox Filtering
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'All' | RequestStatus>('All');
   const [filterInboxType, setFilterInboxType] = useState<'All' | 'Standard' | 'Bedroom'>('All');
+
+  // Ticket Management States
+  const [ticketSearchQuery, setTicketSearchQuery] = useState('');
+  const [ticketStatusFilter, setTicketStatusFilter] = useState<'all' | TicketStatus>('all');
+  const [activeAdminTicketId, setActiveAdminTicketId] = useState<string | null>(null);
+  const [transferTicketId, setTransferTicketId] = useState<string | null>(null);
+  const [adminChatMessageText, setAdminChatMessageText] = useState('');
+  const [adminChatFiles, setAdminChatFiles] = useState<File[]>([]);
+  const [isSendingAdminMessage, setIsSendingAdminMessage] = useState(false);
+
+  const handleAdminFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const fileList = Array.from(e.target.files);
+      setAdminChatFiles(prev => [...prev, ...fileList]);
+    }
+  };
+
+  const handleSendAdminChatMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeAdminTicketId) return;
+    if (!adminChatMessageText.trim() && adminChatFiles.length === 0) return;
+
+    setIsSendingAdminMessage(true);
+    try {
+      const msgPayload = {
+        ticketId: activeAdminTicketId,
+        senderId: 'admin',
+        senderName: 'المدير العام',
+        senderRole: 'admin' as const,
+        content: adminChatMessageText
+      };
+
+      await sendTicketMessage(msgPayload, adminChatFiles);
+      setAdminChatMessageText('');
+      setAdminChatFiles([]);
+    } catch (err) {
+      console.error(err);
+      showFeedback('حدث خطأ أثناء إرسال الرسالة', 'error');
+    } finally {
+      setIsSendingAdminMessage(false);
+    }
+  };
+
+  const getTicketStatusBadge = (status: TicketStatus) => {
+    switch (status) {
+      case 'open':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+            مفتوحة
+          </span>
+        );
+      case 'in_progress':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20">
+            قيد المعالجة
+          </span>
+        );
+      case 'under_review':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            قيد المراجعة الفنية
+          </span>
+        );
+      case 'closed':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            مغلقة / مكتملة
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
 
   // Integrations URL Builders
   const getWhatsAppLink = (phone: string, requestNumber?: string) => {
@@ -224,12 +314,76 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
+  // ASSIGN ENGINEER AND APPROVE TICKET FLOW
+  const handleAssignAndApprove = async (engineerId: string | null) => {
+    if (!assignTarget) return;
+    const { id, type } = assignTarget;
+    try {
+      setGlobalLoading(true);
+      const fields: any = { status: 'Approved' };
+      if (engineerId) {
+        const eng = engineers?.find(e => e.id === engineerId);
+        if (eng) {
+          fields.assignedEngineerId = eng.id;
+          fields.assignedEngineerName = eng.name;
+          fields.assignedAt = Date.now();
+        }
+      }
+
+      if (type === 'standard') {
+        await updateDesignRequestStatus(id, 'Approved', fields);
+        if (selectedRequest?.id === id) {
+          setSelectedRequest(prev => prev ? { ...prev, ...fields } : null);
+        }
+      } else {
+        await updateBedroomSubmissionStatus(id, 'Approved', fields);
+        if (selectedSubmission?.id === id) {
+          setSelectedSubmission(prev => prev ? { ...prev, ...fields } : null);
+        }
+      }
+      showFeedback('تم قبول الطلب وتعيين المهندس بنجاح وإنشاء التذكرة!');
+      setShowAssignModal(false);
+      setAssignTarget(null);
+    } catch (err) {
+      console.error(err);
+      showFeedback('فشل قبول الطلب وتعيين المهندس.', 'error');
+    } finally {
+      setGlobalLoading(false);
+    }
+  };
+
+  const handleAutoAssignAndApprove = async () => {
+    const activeEngineers = engineers?.filter(e => e.active) || [];
+    if (activeEngineers.length === 0) {
+      showFeedback('لا يوجد مهندسين نشطين حالياً في النظام للتعيين التلقائي. يرجى إضافة مهندس نشط أولاً أو التعيين يدوياً.', 'error');
+      return;
+    }
+    // Choose active engineer with the lowest number of current tickets
+    const sorted = [...activeEngineers].sort((a, b) => (a.currentTickets || 0) - (b.currentTickets || 0));
+    const chosenEng = sorted[0];
+    await handleAssignAndApprove(chosenEng.id);
+  };
+
   // GENERIC STATUS UPDATER
   const handleStatusChange = async (id: string, type: 'standard' | 'bedroom', newStatus: RequestStatus) => {
     if (newStatus === 'Rejected') {
       triggerRejectionModal(id, type);
       return;
     }
+
+    // Check if approved status requires engineer assignment
+    if (newStatus === 'Approved') {
+      const req = type === 'standard'
+        ? designRequests.find(r => r.id === id)
+        : bedroomSubmissions.find(s => s.id === id);
+
+      if (req && !req.assignedEngineerId) {
+        setAssignTarget({ id, type });
+        setShowAssignModal(true);
+        return;
+      }
+    }
+
     try {
       setGlobalLoading(true);
       const fields = { status: newStatus };
@@ -548,6 +702,97 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
+  // ENGINEER MANAGEMENT HANDLERS
+  const resetEngineerForm = () => {
+    setEditingEngineer(null);
+    setEngName('');
+    setEngEmail('');
+    setEngPhone('');
+    setEngSpecialization('');
+    setEngActive(true);
+    setEngCurrentTickets(0);
+    setEngCurrentProjects(0);
+    setShowEngineerForm(false);
+  };
+
+  const handleOpenEditEngineer = (eng: Engineer) => {
+    setEditingEngineer(eng);
+    setEngName(eng.name);
+    setEngEmail(eng.email);
+    setEngPhone(eng.phone);
+    setEngSpecialization(eng.specialization || eng.specialty || '');
+    setEngActive(eng.active);
+    setEngCurrentTickets(eng.currentTickets || 0);
+    setEngCurrentProjects(eng.currentProjects || 0);
+    setShowEngineerForm(true);
+  };
+
+  const handleSaveEngineer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!engName.trim() || !engEmail.trim() || !engPhone.trim()) {
+      showFeedback('الرجاء ملء جميع حقول المهندس الأساسية (الاسم، البريد الإلكتروني، رقم الهاتف).', 'error');
+      return;
+    }
+    try {
+      setGlobalLoading(true);
+      const engData = {
+        name: engName.trim(),
+        email: engEmail.trim(),
+        phone: engPhone.trim(),
+        specialty: engSpecialization.trim(),
+        specialization: engSpecialization.trim(),
+        active: engActive,
+        currentTickets: Number(engCurrentTickets) || 0,
+        currentProjects: Number(engCurrentProjects) || 0,
+      };
+
+      if (editingEngineer) {
+        await updateEngineer(editingEngineer.id, engData);
+        showFeedback('تم تحديث بيانات المهندس بنجاح!');
+      } else {
+        await addEngineer(engData);
+        showFeedback('تم إضافة المهندس الجديد بنجاح!');
+      }
+      resetEngineerForm();
+    } catch (err) {
+      console.error(err);
+      showFeedback('حدث خطأ أثناء حفظ بيانات المهندس.', 'error');
+    } finally {
+      setGlobalLoading(false);
+    }
+  };
+
+  const handleToggleEngineerActive = async (eng: Engineer) => {
+    try {
+      setGlobalLoading(true);
+      const newStatus = !eng.active;
+      await updateEngineer(eng.id, { active: newStatus });
+      showFeedback(newStatus ? 'تم تفعيل المهندس بنجاح.' : 'تم تعطيل المهندس بنجاح.');
+    } catch (err) {
+      console.error(err);
+      showFeedback('فشل في تغيير حالة التفعيل للمهندس.', 'error');
+    } finally {
+      setGlobalLoading(false);
+    }
+  };
+
+  const handleDeleteEngineerClick = async (id: string) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذا المهندس نهائياً؟')) return;
+    try {
+      setGlobalLoading(true);
+      await deleteEngineer(id);
+      showFeedback('تم حذف المهندس بنجاح.');
+      if (editingEngineer?.id === id) {
+        resetEngineerForm();
+      }
+    } catch (err) {
+      console.error(err);
+      showFeedback('فشل حذف المهندس.', 'error');
+    } finally {
+      setGlobalLoading(false);
+    }
+  };
+
   // MASTER LIST OF RECENT/FILTERED REQUESTS
   const allInboxItems = [
     ...designRequests.map(r => ({ ...r, inboxType: 'Standard' as const, clientName: r.name, clientPhone: r.phone })),
@@ -638,8 +883,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             { id: 'dressing', label: 'غرف الملابس (Dressing)', icon: <Settings className="w-4 h-4" />, badge: `${projects.filter(p => p.category === 'غرف ملابس').length} مشاريع` },
             { id: 'wood', label: 'ديكورات خشبية (Wood)', icon: <Star className="w-4 h-4" />, badge: `${projects.filter(p => p.category === 'ديكورات خشبية').length} مشاريع` },
             { id: 'projects', label: 'إدارة جميع المشاريع', icon: <ImageIcon className="w-4 h-4" />, badge: `${projects.length} كلي` },
-            { 
-              id: 'requests', 
+            { id: 'requests', 
               label: 'طلبات العملاء (Inbox)', 
               icon: (
                 <div className="relative">
@@ -649,6 +893,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               ),
               badge: unreadCount > 0 ? `${unreadCount} جديد` : null
             },
+            { id: 'tickets', label: 'إدارة التذاكر', icon: <FileText className="w-4 h-4 text-[#d4af37]" />, badge: `${tickets ? tickets.length : 0} تذكرة` },
+            { id: 'engineers', label: 'إدارة المهندسين', icon: <User className="w-4 h-4 text-[#d4af37]" />, badge: `${engineers ? engineers.length : 0} مهندس` },
             { id: 'settings', label: 'الإعدادات والمختبر', icon: <Settings className="w-4 h-4" /> }
           ].map((tab) => (
             <button
@@ -1362,6 +1608,922 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </div>
         )}
 
+        {/* ==================== SUB TAB: TICKET MANAGEMENT ==================== */}
+        {activeSubTab === 'tickets' && (
+          <div className="space-y-6 animate-fade-in text-right" dir="rtl">
+            
+            {/* Ticket Management Stats Header */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-1.5 h-full bg-[#d4af37]" />
+                <span className="text-gray-400 text-xs block font-bold">إجمالي التذاكر الفنية</span>
+                <span className="text-3xl font-black text-gray-900 mt-2 block font-mono">
+                  {tickets ? tickets.length : 0}
+                </span>
+                <span className="text-[10px] text-gray-400 block mt-1">تذاكر الدعم والطلبات النشطة</span>
+              </div>
+              
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-1.5 h-full bg-blue-500" />
+                <span className="text-gray-400 text-xs block font-bold">تذاكر مفتوحة للتعيين</span>
+                <span className="text-3xl font-black text-blue-600 mt-2 block font-mono">
+                  {tickets ? tickets.filter(t => t.status === 'open').length : 0}
+                </span>
+                <span className="text-[10px] text-blue-500 font-bold block mt-1">بحاجة لتعيين مهندس أو متابعة</span>
+              </div>
+
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-1.5 h-full bg-[#d4af37]/70" />
+                <span className="text-gray-400 text-xs block font-bold">تذاكر قيد المعالجة</span>
+                <span className="text-3xl font-black text-[#b8952b] mt-2 block font-mono">
+                  {tickets ? tickets.filter(t => t.status === 'in_progress' || t.status === 'under_review').length : 0}
+                </span>
+                <span className="text-[10px] text-amber-500 font-bold block mt-1">يعمل عليها المهندسون حالياً</span>
+              </div>
+
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-1.5 h-full bg-green-500" />
+                <span className="text-gray-400 text-xs block font-bold">تذاكر مغلقة مكتملة</span>
+                <span className="text-3xl font-black text-green-600 mt-2 block font-mono">
+                  {tickets ? tickets.filter(t => t.status === 'closed').length : 0}
+                </span>
+                <span className="text-[10px] text-green-500 font-bold block mt-1">تمت معالجتها بنجاح مع العميل</span>
+              </div>
+            </div>
+
+            {/* Ticket List Section */}
+            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+                <div>
+                  <h3 className="font-black text-base text-gray-900 border-r-2 border-[#d4af37] pr-2.5">
+                    لوحة إدارة ومتابعة التذاكر الفنية (Real-Time)
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-1">عرض جميع قنوات الحوار المباشر مع العملاء ومتابعة المهندسين المسؤولين</p>
+                </div>
+              </div>
+
+              {/* Filtering & Searching Controls */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                <div className="md:col-span-8 relative">
+                  <input
+                    type="text"
+                    placeholder="ابحث برقم التذكرة، رقم التتبع، اسم العميل، رقم الهاتف أو المهندس المسؤول..."
+                    value={ticketSearchQuery}
+                    onChange={(e) => setTicketSearchQuery(e.target.value)}
+                    className="w-full pl-4 pr-10 py-3 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-1 focus:ring-[#d4af37] outline-none font-semibold text-right"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-gray-400">
+                    <Sliders className="w-4 h-4 rotate-90 text-gray-400" />
+                  </div>
+                </div>
+
+                <div className="md:col-span-4">
+                  <select
+                    value={ticketStatusFilter}
+                    onChange={(e) => setTicketStatusFilter(e.target.value as any)}
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl font-bold text-xs outline-none focus:bg-white text-right"
+                  >
+                    <option value="all">جميع الحالات التكتيكية</option>
+                    <option value="open">مفتوحة (Open)</option>
+                    <option value="in_progress">قيد العمل (In Progress)</option>
+                    <option value="under_review">قيد المراجعة الفنية (Under Review)</option>
+                    <option value="closed">مغلقة / مكتملة (Closed)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Tickets Table container */}
+              <div className="overflow-x-auto rounded-xl border border-gray-150">
+                <table className="w-full text-right text-xs font-semibold text-gray-700 min-w-[1000px]">
+                  <thead className="bg-[#171714] text-[#d4af37] font-bold border-b border-[#d4af37]/25">
+                    <tr>
+                      <th className="p-4 rounded-rt-xl">رقم التذكرة</th>
+                      <th className="p-4">رقم التتبع</th>
+                      <th className="p-4">اسم العميل</th>
+                      <th className="p-4">رقم الهاتف</th>
+                      <th className="p-4">المهندس المسؤول</th>
+                      <th className="p-4">حالة التذكرة</th>
+                      <th className="p-4">آخر رسالة</th>
+                      <th className="p-4">تاريخ الإنشاء</th>
+                      <th className="p-4 rounded-lt-xl text-center">خيارات التحكم والعمليات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {!tickets || tickets.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="p-12 text-center text-gray-400 font-bold">
+                          لا توجد تذاكر دعم فني مسجلة في النظام حالياً.
+                        </td>
+                      </tr>
+                    ) : (() => {
+                      // Filtered Tickets
+                      const filtered = tickets.filter(t => {
+                        const q = ticketSearchQuery.toLowerCase();
+                        const matchesSearch = 
+                          t.id.toLowerCase().includes(q) ||
+                          t.clientName.toLowerCase().includes(q) ||
+                          t.clientPhone.includes(q) ||
+                          (t.assignedEngineerName && t.assignedEngineerName.toLowerCase().includes(q)) ||
+                          (t.relatedRequestNumber && t.relatedRequestNumber.toLowerCase().includes(q)) ||
+                          (t.trackingId && t.trackingId.toLowerCase().includes(q)) ||
+                          (t.subject && t.subject.toLowerCase().includes(q)) ||
+                          (t.title && t.title.toLowerCase().includes(q));
+                        
+                        const matchesStatus = ticketStatusFilter === 'all' || t.status === ticketStatusFilter;
+                        
+                        return matchesSearch && matchesStatus;
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={9} className="p-12 text-center text-gray-400 font-bold">
+                              لم يتم العثور على تذاكر تطابق معايير البحث والفلترة.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return filtered.map(t => {
+                        // Find last message
+                        const ticketMsgs = messages.filter(m => m.ticketId === t.id);
+                        const lastMsg = ticketMsgs.length > 0 
+                          ? [...ticketMsgs].sort((a,b) => b.createdAt - a.createdAt)[0] 
+                          : null;
+                        
+                        // Status styling
+                        const statusBadge = getTicketStatusBadge(t.status);
+
+                        return (
+                          <tr key={t.id} className="hover:bg-gray-50/50 transition-all border-b border-gray-150">
+                            <td className="p-4 font-mono font-black text-gray-900">{t.id}</td>
+                            <td className="p-4 font-mono text-gray-600">{t.trackingId || t.relatedRequestNumber || 'مباشر / لا يوجد'}</td>
+                            <td className="p-4 font-black text-gray-900">{t.clientName}</td>
+                            <td className="p-4 font-mono text-gray-600">{t.clientPhone}</td>
+                            <td className="p-4">
+                              {t.assignedEngineerName ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="bg-amber-50 text-[#aa7c11] px-2.5 py-1 rounded-md border border-[#d4af37]/20 font-bold">
+                                    م. {t.assignedEngineerName}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-red-500 font-bold bg-red-50 px-2 py-1 rounded-md border border-red-100">
+                                  غير معين
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-4">{statusBadge}</td>
+                            <td className="p-4 max-w-[200px] truncate text-gray-500" title={lastMsg ? lastMsg.content : ''}>
+                              {lastMsg ? (
+                                <div className="flex flex-col">
+                                  <span className="truncate">{lastMsg.content}</span>
+                                  <span className="text-[10px] text-gray-400 font-mono mt-0.5">من: {lastMsg.senderName}</span>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 italic">لا توجد رسائل</span>
+                              )}
+                            </td>
+                            <td className="p-4 text-gray-500 font-mono">
+                              {new Date(t.createdAt).toLocaleDateString('ar-IQ')}
+                            </td>
+                            <td className="p-4">
+                              <div className="flex flex-wrap gap-2 justify-center">
+                                
+                                {/* 1. فتح التذكرة */}
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveAdminTicketId(t.id)}
+                                  className="px-3 py-1.5 bg-[#171714] text-[#d4af37] hover:bg-black rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
+                                >
+                                  <MessageSquare className="w-3.5 h-3.5" />
+                                  <span>فتح التذكرة</span>
+                                </button>
+
+                                {/* 2. تحويل لمهندس آخر */}
+                                <button
+                                  type="button"
+                                  onClick={() => setTransferTicketId(t.id)}
+                                  className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1 transition-all"
+                                >
+                                  <User className="w-3.5 h-3.5" />
+                                  <span>تحويل لمهندس</span>
+                                </button>
+
+                                {/* 3. إغلاق التذكرة (if open) */}
+                                {t.status !== 'closed' ? (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      await updateTicketStatus(t.id, 'closed');
+                                      showFeedback('تم إغلاق التذكرة بنجاح');
+                                    }}
+                                    className="px-3 py-1.5 bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 rounded-lg text-xs font-bold flex items-center gap-1 transition-all"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>إغلاق التذكرة</span>
+                                  </button>
+                                ) : (
+                                  /* 4. إعادة فتح التذكرة (if closed) */
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      await updateTicketStatus(t.id, 'open');
+                                      showFeedback('تم إعادة فتح التذكرة بنجاح');
+                                    }}
+                                    className="px-3 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 rounded-lg text-xs font-bold flex items-center gap-1 transition-all"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                    <span>إعادة فتح</span>
+                                  </button>
+                                )}
+
+                                {/* 5. حذف التذكرة */}
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (confirm(`هل أنت متأكد نهائياً من حذف التذكرة رقم [${t.id}]؟ سيتم إزالتها كلياً من قاعدة البيانات.`)) {
+                                      await deleteTicket(t.id);
+                                      showFeedback('تم حذف التذكرة نهائياً بنجاح');
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 rounded-lg text-xs font-bold flex items-center gap-1 transition-all"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>حذف التذكرة</span>
+                                </button>
+
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* ==================== MODAL: TRANSFER TICKET TO ENGINEER ==================== */}
+            <AnimatePresence>
+              {transferTicketId && (
+                <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 text-right" dir="rtl">
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                    className="w-full max-w-xl bg-white rounded-3xl border border-[#d4af37]/40 overflow-hidden shadow-2xl p-6 space-y-6"
+                  >
+                    <div className="flex items-center gap-3 border-b border-gray-100 pb-4">
+                      <div className="p-2.5 bg-[#d4af37]/10 text-[#d4af37] rounded-2xl border border-[#d4af37]/20">
+                        <User className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-black text-gray-900">تحويل التذكرة لمهندس تصميم آخر</h3>
+                        <p className="text-xs text-gray-400 mt-0.5 font-sans">اختر مهندس من القائمة لإسناد التذكرة رقم {transferTicketId} لمتابعته الفنية والمحادثة</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h4 className="font-black text-xs text-gray-700">الكادر الهندسي المتاح حالياً:</h4>
+                      <div className="max-h-[220px] overflow-y-auto border border-gray-100 rounded-2xl p-2 space-y-2 bg-gray-50/50">
+                        {!engineers || engineers.filter(e => e.active).length === 0 ? (
+                          <p className="text-xs text-gray-400 text-center py-6">لا يوجد مهندسين نشطين مسجلين في النظام حالياً.</p>
+                        ) : (
+                          engineers
+                            .filter(e => e.active)
+                            .map(eng => {
+                              const initials = eng.name ? eng.name.trim().split(' ').map(n => n[0]).slice(0, 2).join('') : 'EM';
+                              return (
+                                <button
+                                  key={eng.id}
+                                  type="button"
+                                  onClick={async () => {
+                                    await assignTicket(transferTicketId, eng.id, eng.name);
+                                    setTransferTicketId(null);
+                                    showFeedback(`تم تحويل التذكرة للمهندس [${eng.name}] بنجاح`);
+                                  }}
+                                  className="w-full p-3 bg-white border border-gray-150 rounded-xl hover:border-[#d4af37] hover:bg-amber-50/10 transition-all flex items-center justify-between gap-4 text-right shadow-sm group"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-[#171714] text-[#d4af37] flex items-center justify-center font-black text-xs shrink-0 group-hover:scale-105 transition-all">
+                                      {initials}
+                                    </div>
+                                    <div>
+                                      <span className="font-extrabold text-xs text-gray-900 block">م. {eng.name}</span>
+                                      <span className="text-[10px] text-gray-400 font-bold block mt-0.5 font-sans">
+                                        {eng.specialization || eng.specialty || 'ديكورات داخلية'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="text-left shrink-0">
+                                    <span className="inline-flex items-center gap-1 text-[10px] bg-purple-50 text-purple-700 font-bold px-2 py-0.5 rounded-md border border-purple-100">
+                                      {eng.currentTickets || 0} تذاكر نشطة
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Footer Actions */}
+                    <div className="flex gap-3 pt-3 border-t border-gray-100 text-xs font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setTransferTicketId(null)}
+                        className="w-full py-3 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-xl transition-all"
+                      >
+                        تراجع وإلغاء
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+
+            {/* ==================== MODAL: OPEN TICKET / ADMIN CHAT & DETAIL ==================== */}
+            <AnimatePresence>
+              {activeAdminTicketId && (() => {
+                const ticket = tickets.find(t => t.id === activeAdminTicketId);
+                if (!ticket) return null;
+                
+                const ticketMsgs = messages.filter(m => m.ticketId === ticket.id);
+                const sortedMsgs = [...ticketMsgs].sort((a,b) => a.createdAt - b.createdAt);
+
+                return (
+                  <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 text-right" dir="rtl">
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      className="w-full max-w-4xl bg-white rounded-3xl border border-[#d4af37]/35 overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+                    >
+                      {/* Modal Header */}
+                      <div className="p-5 bg-[#171714] text-white flex justify-between items-center border-b border-[#d4af37]/25">
+                        <div className="flex items-center gap-2">
+                          <MessageSquare className="w-5 h-5 text-[#d4af37]" />
+                          <div>
+                            <h3 className="text-sm font-black text-white">
+                              قناة المحادثة والتفاصيل الفنية للتذكرة: {ticket.id}
+                            </h3>
+                            <p className="text-[10px] text-[#d4af37] font-sans">
+                              الموضوع: {ticket.subject || ticket.title || 'دعم فني عام'}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => { setActiveAdminTicketId(null); setAdminChatMessageText(''); setAdminChatFiles([]); }}
+                          className="p-1.5 hover:bg-white/10 rounded-full transition-all text-gray-400 hover:text-white"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      {/* Modal Split View */}
+                      <div className="grid grid-cols-1 md:grid-cols-12 flex-1 overflow-hidden min-h-0">
+                        
+                        {/* Left Column: Chat messages panel (8 of 12) */}
+                        <div className="md:col-span-8 flex flex-col h-full bg-gray-50/50 min-h-0 border-l border-gray-150">
+                          
+                          {/* Live chat thread */}
+                          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                            {sortedMsgs.length === 0 ? (
+                              <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
+                                <MessageSquare className="w-12 h-12 text-gray-300 animate-pulse" />
+                                <p className="text-xs font-bold">لا توجد رسائل في هذه التذكرة بعد. ابدأ بمراسلة العميل!</p>
+                              </div>
+                            ) : (
+                              sortedMsgs.map((msg) => {
+                                const isAdmin = msg.senderRole === 'admin';
+                                const isClient = msg.senderRole === 'client';
+                                
+                                return (
+                                  <div key={msg.id} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`max-w-[85%] rounded-2xl p-3.5 space-y-1.5 ${
+                                      isAdmin 
+                                        ? 'bg-[#171714] text-white rounded-br-none border border-[#d4af37]/20 shadow-md' 
+                                        : isClient
+                                          ? 'bg-blue-50 text-gray-800 rounded-bl-none border border-blue-100 shadow-sm'
+                                          : 'bg-amber-50 text-gray-800 rounded-bl-none border border-amber-100 shadow-sm'
+                                    }`}>
+                                      <div className="flex justify-between items-center gap-4 text-[10px]">
+                                        <span className={`font-black ${isAdmin ? 'text-[#d4af37]' : isClient ? 'text-blue-600' : 'text-[#aa7c11]'}`}>
+                                          {msg.senderName} ({msg.senderRole === 'admin' ? 'المدير العام' : msg.senderRole === 'client' ? 'العميل' : 'المهندس المصمم'})
+                                        </span>
+                                        <span className="text-gray-400 font-mono">
+                                          {new Date(msg.createdAt).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs leading-relaxed font-medium whitespace-pre-wrap">{msg.content}</p>
+                                      
+                                      {/* Msg Attachments */}
+                                      {msg.attachments && msg.attachments.length > 0 && (
+                                        <div className="pt-2 border-t border-gray-200/20 mt-2 space-y-1">
+                                          {msg.attachments.map((file, idx) => (
+                                            <a
+                                              key={idx}
+                                              href={file.url}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="inline-flex items-center gap-1 text-[10px] text-[#d4af37] underline font-bold"
+                                            >
+                                              <span>📎 {file.name}</span>
+                                            </a>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+
+                          {/* Chat Input form */}
+                          <form onSubmit={handleSendAdminChatMessage} className="p-4 bg-white border-t border-gray-150 space-y-3">
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={adminChatMessageText}
+                                onChange={(e) => setAdminChatMessageText(e.target.value)}
+                                placeholder="اكتب رسالتك الرسمية للعميل والمهندس هنا..."
+                                className="flex-1 p-2.5 text-xs bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:ring-1 focus:ring-[#d4af37]"
+                              />
+                              
+                              {/* File upload trigger */}
+                              <label className="p-2.5 bg-gray-100 hover:bg-gray-200 text-gray-500 rounded-xl cursor-pointer flex items-center justify-center transition-all border border-gray-200" title="إرفاق ملف">
+                                <input
+                                  type="file"
+                                  multiple
+                                  onChange={handleAdminFileChange}
+                                  className="hidden"
+                                />
+                                <span>📎</span>
+                              </label>
+
+                              <button
+                                type="submit"
+                                disabled={isSendingAdminMessage}
+                                className="px-5 py-2.5 bg-[#d4af37] text-[#171714] font-bold rounded-xl text-xs hover:bg-[#b8952b] transition-all disabled:opacity-50 flex items-center gap-1.5"
+                              >
+                                {isSendingAdminMessage ? 'جاري الإرسال...' : 'إرسال'}
+                              </button>
+                            </div>
+
+                            {/* Display attached files before sending */}
+                            {adminChatFiles.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 pt-1.5">
+                                {adminChatFiles.map((file, idx) => (
+                                  <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] border">
+                                    <span className="truncate max-w-[120px]">{file.name}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setAdminChatFiles(prev => prev.filter((_, i) => i !== idx))}
+                                      className="text-red-500 hover:text-red-700 font-bold ml-1"
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </form>
+                        </div>
+
+                        {/* Right Column: Ticket details & metadata (4 of 12) */}
+                        <div className="md:col-span-4 p-5 overflow-y-auto space-y-5 text-xs">
+                          
+                          <div>
+                            <h4 className="font-extrabold text-gray-900 border-r-2 border-[#d4af37] pr-2 mb-2">بيانات الحالة العامة</h4>
+                            <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-2 font-semibold">
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">حالة التذكرة الحالية:</span>
+                                <span>{getTicketStatusBadge(ticket.status)}</span>
+                              </div>
+                              <div className="flex justify-between border-t border-gray-200/50 pt-2 font-sans">
+                                <span className="text-gray-400">تحديث الحالة:</span>
+                                <select
+                                  value={ticket.status}
+                                  onChange={async (e) => {
+                                    await updateTicketStatus(ticket.id, e.target.value as TicketStatus);
+                                    showFeedback('تم تحديث حالة التذكرة بنجاح');
+                                  }}
+                                  className="bg-white border border-gray-200 rounded px-1.5 py-0.5 font-bold outline-none text-right text-[11px]"
+                                >
+                                  <option value="open">مفتوحة (Open)</option>
+                                  <option value="in_progress">قيد المعالجة (In Progress)</option>
+                                  <option value="under_review">تحت المراجعة (Under Review)</option>
+                                  <option value="closed">مغلقة (Closed)</option>
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <h4 className="font-extrabold text-gray-900 border-r-2 border-[#d4af37] pr-2 mb-2">معلومات العميل</h4>
+                            <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-2 font-semibold">
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">اسم العميل:</span>
+                                <span className="text-gray-900">{ticket.clientName}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">رقم الهاتف:</span>
+                                <span className="text-gray-900 font-mono">{ticket.clientPhone}</span>
+                              </div>
+                              {ticket.clientEmail && (
+                                <div className="flex justify-between">
+                                  <span className="text-gray-400">البريد الإلكتروني:</span>
+                                  <span className="text-gray-900 font-mono truncate max-w-[120px]">{ticket.clientEmail}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div>
+                            <h4 className="font-extrabold text-gray-900 border-r-2 border-[#d4af37] pr-2 mb-2">المهندس الفني المسؤول</h4>
+                            <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-2 font-semibold">
+                              <div className="flex justify-between">
+                                <span className="text-gray-400">المهندس المعين:</span>
+                                <span className="text-gray-900 font-bold">
+                                  {ticket.assignedEngineerName ? `م. ${ticket.assignedEngineerName}` : 'غير معين بعد'}
+                                </span>
+                              </div>
+                              <div className="pt-2 border-t border-gray-200/50 flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setTransferTicketId(ticket.id);
+                                  }}
+                                  className="px-2.5 py-1 bg-[#171714] text-[#d4af37] hover:bg-black rounded border border-[#d4af37]/25 text-[10px] font-bold"
+                                >
+                                  تعديل / تعيين المهندس
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <h4 className="font-extrabold text-gray-900 border-r-2 border-[#d4af37] pr-2 mb-2">الوصف المبدئي والملحقات</h4>
+                            <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-2">
+                              <p className="text-gray-600 leading-relaxed font-medium">{ticket.description}</p>
+                              
+                              {ticket.attachments && ticket.attachments.length > 0 && (
+                                <div className="pt-2 border-t border-gray-200/50">
+                                  <span className="text-gray-400 font-bold block mb-1 font-sans">المرفقات التأسيسية للتذكرة:</span>
+                                  <div className="flex flex-col gap-1">
+                                    {ticket.attachments.map((url, i) => (
+                                      <a
+                                        key={i}
+                                        href={url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-[#b8952b] underline truncate max-w-[180px] font-bold"
+                                      >
+                                        📎 مرفق ملف أساسي #{i+1}
+                                      </a>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                        </div>
+
+                      </div>
+
+                      {/* Modal Footer */}
+                      <div className="p-4 bg-gray-50 border-t border-gray-150 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => { setActiveAdminTicketId(null); setAdminChatMessageText(''); setAdminChatFiles([]); }}
+                          className="px-5 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl font-bold text-xs"
+                        >
+                          إغلاق التفاصيل
+                        </button>
+                      </div>
+                    </motion.div>
+                  </div>
+                );
+              })()}
+            </AnimatePresence>
+
+          </div>
+        )}
+
+        {/* ==================== SUB TAB: ENGINEERS MANAGEMENT ==================== */}
+        {activeSubTab === 'engineers' && (
+          <div className="space-y-8 animate-fade-in">
+            {/* Engineers Quick Stats Dashboard */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-1.5 h-full bg-[#d4af37]" />
+                <span className="text-gray-400 text-xs block font-bold">إجمالي المهندسين</span>
+                <span className="text-3xl font-black text-gray-900 mt-2 block font-mono">
+                  {engineers ? engineers.length : 0}
+                </span>
+                <span className="text-[10px] text-gray-400 block mt-1">كادر التصميم الهندسي</span>
+              </div>
+              
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-1.5 h-full bg-green-500" />
+                <span className="text-gray-400 text-xs block font-bold">المهندسين النشطين</span>
+                <span className="text-3xl font-black text-green-600 mt-2 block font-mono">
+                  {engineers ? engineers.filter(e => e.active).length : 0}
+                </span>
+                <span className="text-[10px] text-green-500 font-bold block mt-1">جاهزون لاستلام المشاريع</span>
+              </div>
+
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-1.5 h-full bg-red-400" />
+                <span className="text-gray-400 text-xs block font-bold">المهندسين غير النشطين</span>
+                <span className="text-3xl font-black text-red-500 mt-2 block font-mono">
+                  {engineers ? engineers.filter(e => !e.active).length : 0}
+                </span>
+                <span className="text-[10px] text-red-400 block mt-1">متوقفون مؤقتاً</span>
+              </div>
+
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-1.5 h-full bg-purple-500" />
+                <span className="text-gray-400 text-xs block font-bold">المشاريع والتذاكر الحالية</span>
+                <span className="text-3xl font-black text-purple-600 mt-2 block font-mono">
+                  {engineers ? engineers.reduce((sum, e) => sum + (e.currentProjects || 0) + (e.currentTickets || 0), 0) : 0}
+                </span>
+                <span className="text-[10px] text-purple-400 block mt-1">حجم العمل الإجمالي قيد المعالجة</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              {/* Right Side: Add/Edit Engineer Form Card (4 of 12 columns) */}
+              <div className="lg:col-span-4 bg-[#171714] text-white p-6 rounded-2xl border border-[#d4af37]/30 shadow-xl space-y-5">
+                <div className="flex items-center gap-3 pb-3 border-b border-[#d4af37]/15">
+                  <div className="p-2 bg-[#d4af37]/10 text-[#d4af37] rounded-xl border border-[#d4af37]/20">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-sm text-white">
+                      {editingEngineer ? 'تعديل بيانات المهندس' : 'إضافة مهندس جديد'}
+                    </h3>
+                    <p className="text-[10px] text-gray-400 mt-0.5">أدخل تفاصيل التخصص والاتصال للكادر الهندسي</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSaveEngineer} className="space-y-4 text-xs font-semibold">
+                  <div className="space-y-1.5">
+                    <label className="block text-gray-300 font-bold">اسم المهندس المصمم <span className="text-[#d4af37]">*</span>:</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="مثال: م. علي العراقي"
+                      value={engName}
+                      onChange={(e) => setEngName(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-[#20201c] border border-gray-800 text-white rounded-xl outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-gray-300 font-bold">البريد الإلكتروني <span className="text-[#d4af37]">*</span>:</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="ali@royalgroup.com"
+                      value={engEmail}
+                      onChange={(e) => setEngEmail(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-[#20201c] border border-gray-800 text-white rounded-xl outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37] text-left"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-gray-300 font-bold">رقم الهاتف الفعال <span className="text-[#d4af37]">*</span>:</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="مثال: 0770..."
+                      value={engPhone}
+                      onChange={(e) => setEngPhone(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-[#20201c] border border-gray-800 text-white rounded-xl outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37] text-left"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-gray-300 font-bold">تخصص المهندس:</label>
+                    <input
+                      type="text"
+                      placeholder="مثال: مصمم ديكور داخلي راقي"
+                      value={engSpecialization}
+                      onChange={(e) => setEngSpecialization(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-[#20201c] border border-gray-800 text-white rounded-xl outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-gray-300 font-bold">المشاريع الحالية:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={engCurrentProjects}
+                        onChange={(e) => setEngCurrentProjects(Number(e.target.value) || 0)}
+                        className="w-full px-3.5 py-2.5 bg-[#20201c] border border-gray-800 text-white rounded-xl outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-gray-300 font-bold">التذاكر الحالية:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={engCurrentTickets}
+                        onChange={(e) => setEngCurrentTickets(Number(e.target.value) || 0)}
+                        className="w-full px-3.5 py-2.5 bg-[#20201c] border border-gray-800 text-white rounded-xl outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-between">
+                    <span className="text-gray-300 font-bold">حالة تفعيل الحساب:</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={engActive}
+                        onChange={(e) => setEngActive(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d4af37]"></div>
+                      <span className="mr-2 text-xs font-bold text-gray-300">
+                        {engActive ? 'نشط' : 'معطل'}
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="flex gap-3 pt-4 border-t border-[#d4af37]/10">
+                    <button
+                      type="submit"
+                      className="flex-1 py-3 bg-[#d4af37] text-[#171714] font-black rounded-xl hover:bg-[#b8952b] transition-all flex items-center justify-center gap-2"
+                    >
+                      {editingEngineer ? 'حفظ التعديلات' : 'إضافة الكادر'}
+                    </button>
+                    {editingEngineer && (
+                      <button
+                        type="button"
+                        onClick={resetEngineerForm}
+                        className="px-4 py-3 bg-gray-800 text-gray-300 rounded-xl hover:bg-gray-700 transition-all font-bold"
+                      >
+                        إلغاء
+                      </button>
+                    )}
+                  </div>
+                </form>
+              </div>
+
+              {/* Left Side: Engineers List Card (8 of 12 columns) */}
+              <div className="lg:col-span-8 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-gray-100">
+                  <div>
+                    <h3 className="font-black text-sm text-gray-900 border-r-2 border-[#d4af37] pr-2.5">
+                      قائمة المهندسين الحالية
+                    </h3>
+                    <p className="text-xs text-gray-400 mt-1">تتبع كادر التصميم، ونسب الإشغال، وحالة النشاط لكل مهندس</p>
+                  </div>
+                </div>
+
+                {/* Search box */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="البحث عن مهندس بالاسم أو التخصص..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-4 pr-10 py-2.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-1 focus:ring-[#d4af37] outline-none font-semibold text-right"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-gray-400">
+                    <Sliders className="w-4 h-4 rotate-90" />
+                  </div>
+                </div>
+
+                {/* Engineers List Table / Cards */}
+                <div className="space-y-4">
+                  {!engineers || engineers.length === 0 ? (
+                    <div className="text-center py-12 border-2 border-dashed border-gray-100 rounded-2xl">
+                      <User className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-xs text-gray-400 font-bold">لا يوجد مهندسين مسجلين حالياً في النظام.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {engineers
+                        .filter(e => {
+                          if (!searchQuery) return true;
+                          const nameMatch = e.name.toLowerCase().includes(searchQuery.toLowerCase());
+                          const specMatch = (e.specialization || e.specialty || '').toLowerCase().includes(searchQuery.toLowerCase());
+                          const emailMatch = e.email.toLowerCase().includes(searchQuery.toLowerCase());
+                          return nameMatch || specMatch || emailMatch;
+                        })
+                        .map(eng => {
+                          const initials = eng.name ? eng.name.trim().split(' ').map(n => n[0]).slice(0, 2).join('') : 'EM';
+                          return (
+                            <div
+                              key={eng.id}
+                              className={`p-4 bg-gray-50 rounded-2xl border transition-all hover:shadow-md flex flex-col justify-between gap-4 relative ${
+                                !eng.active ? 'opacity-70 grayscale-[25%]' : 'border-gray-100'
+                              }`}
+                            >
+                              {/* Card Top: Avatar, Name & Specialty */}
+                              <div className="flex gap-3">
+                                <div className="w-12 h-12 rounded-xl bg-[#171714] text-[#d4af37] flex items-center justify-center font-black text-sm shrink-0 shadow-inner border border-[#d4af37]/20">
+                                  {initials}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <h4 className="font-extrabold text-xs text-gray-900 truncate flex items-center gap-1.5">
+                                    {eng.name}
+                                    <span className={`w-2 h-2 rounded-full ${eng.active ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+                                  </h4>
+                                  <p className="text-[10px] text-gray-400 mt-1 font-bold">
+                                    {eng.specialization || eng.specialty || 'مهندس مصمم'}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Contact Details Block */}
+                              <div className="space-y-1.5 text-[10px] text-gray-600 font-semibold pt-1 border-t border-gray-100">
+                                <div className="flex items-center gap-1.5">
+                                  <Phone className="w-3 h-3 text-[#d4af37]" />
+                                  <span className="font-mono">{eng.phone}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <Mail className="w-3 h-3 text-[#d4af37]" />
+                                  <span className="truncate">{eng.email}</span>
+                                </div>
+                              </div>
+
+                              {/* Workload Stats Bento Indicators */}
+                              <div className="grid grid-cols-2 gap-3 pt-2">
+                                <div className="bg-white p-2 rounded-xl border border-gray-200/60 text-center">
+                                  <span className="text-[9px] text-gray-400 block font-bold">مشاريع جارية</span>
+                                  <span className="text-sm font-black text-[#171714] font-mono mt-0.5 block">
+                                    {eng.currentProjects || 0}
+                                  </span>
+                                </div>
+                                <div className="bg-white p-2 rounded-xl border border-gray-200/60 text-center">
+                                  <span className="text-[9px] text-gray-400 block font-bold">تذاكر نشطة</span>
+                                  <span className="text-sm font-black text-[#171714] font-mono mt-0.5 block">
+                                    {eng.currentTickets || 0}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Card Actions Bottom */}
+                              <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${
+                                  eng.active 
+                                    ? 'bg-green-50 text-green-700 border-green-200' 
+                                    : 'bg-red-50 text-red-700 border-red-200'
+                                }`}>
+                                  {eng.active ? 'نشط ومتاح' : 'غير نشط'}
+                                </span>
+
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => handleToggleEngineerActive(eng)}
+                                    className={`p-1.5 rounded transition-all text-[10px] font-bold border ${
+                                      eng.active 
+                                        ? 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200' 
+                                        : 'bg-green-50 hover:bg-green-100 text-green-700 border-green-200'
+                                    }`}
+                                    title={eng.active ? 'تعطيل الحساب' : 'تفعيل الحساب'}
+                                  >
+                                    {eng.active ? 'تعطيل' : 'تفعيل'}
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleOpenEditEngineer(eng)}
+                                    className="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded"
+                                    title="تعديل البيانات"
+                                  >
+                                    <Edit2 className="w-3 h-3" />
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleDeleteEngineerClick(eng.id)}
+                                    className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded"
+                                    title="حذف المهندس"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ==================== SUB TAB: SETTINGS & COLOR LAB ==================== */}
         {activeSubTab === 'settings' && (
           <div className="space-y-8">
@@ -1432,7 +2594,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     </div>
                     <div className="space-y-1">
                       <label className="font-bold">رابط صورة الرندر</label>
-                      <input type="text" value={colorUrl} onChange={(e) => setColorUrl(e.target.value)} placeholder="https://..." className="w-full p-2 bg-white border border-gray-200 rounded-lg" />
+                      <div className="flex flex-col gap-1.5">
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files.length > 0) {
+                              setColorFile(e.target.files[0]);
+                              setColorUrl('');
+                            }
+                          }} 
+                          className="w-full text-[10px] text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-[#171714]/10 file:text-[#171714] hover:file:bg-[#171714]/15"
+                        />
+                        <input 
+                          type="text" 
+                          value={colorUrl} 
+                          onChange={(e) => {
+                            setColorUrl(e.target.value);
+                            setColorFile(null);
+                          }} 
+                          placeholder="https://... أو سيتم استخدام الملف المرفق" 
+                          className="w-full p-2 bg-white border border-gray-200 rounded-lg text-xs" 
+                        />
+                      </div>
                     </div>
                   </div>
                   <div className="pt-2 flex justify-end">
@@ -1710,6 +2894,110 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-md shadow-red-600/10"
                 >
                   تأكيد رفض الطلب نهائياً
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ==================== MODAL: ENGINEER ASSIGNMENT OVERLAY ==================== */}
+      <AnimatePresence>
+        {showAssignModal && assignTarget && (
+          <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" dir="rtl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="w-full max-w-xl bg-white rounded-3xl border border-[#d4af37]/40 overflow-hidden shadow-2xl p-6 space-y-6 text-right"
+            >
+              <div className="flex items-center gap-3 border-b border-gray-100 pb-4">
+                <div className="p-2.5 bg-[#d4af37]/10 text-[#d4af37] rounded-2xl border border-[#d4af37]/20">
+                  <User className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-gray-900">تعيين مهندس للتصميم والمتابعة</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">اختر طريقة إسناد هذا الطلب المعتمد لأحد المهندسين لتظهر التذكرة في بوابته فوراً.</p>
+                </div>
+              </div>
+
+              {/* Option A: Auto Assignment */}
+              <div className="bg-amber-50/40 p-4 rounded-2xl border border-amber-100 space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <Activity className="w-5 h-5 text-[#d4af37] shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-extrabold text-xs text-amber-900">التعيين التلقائي الذكي (Smart Auto-Assign)</h4>
+                    <p className="text-[11px] text-amber-700 leading-relaxed mt-0.5">
+                      سيقوم النظام بالبحث عن الكادر الهندسي النشط حالياً، واختيار المهندس صاحب العبء العملي الأقل (الذي لديه أقل عدد من التذاكر النشطة) لضمان سرعة الاستجابة للعميل.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAutoAssignAndApprove}
+                  className="w-full py-3 bg-[#d4af37] text-[#171714] font-black rounded-xl hover:bg-[#b8952b] transition-all flex items-center justify-center gap-2 text-xs shadow-md shadow-[#d4af37]/15"
+                >
+                  <Check className="w-4 h-4" />
+                  تفعيل التعيين التلقائي والموافقة الفورية
+                </button>
+              </div>
+
+              {/* Option B: Manual Selection list */}
+              <div className="space-y-3">
+                <h4 className="font-black text-xs text-gray-700">أو اختيار مهندس مصمم يدوياً:</h4>
+                <div className="max-h-[220px] overflow-y-auto border border-gray-100 rounded-2xl p-2 space-y-2 bg-gray-50/50">
+                  {!engineers || engineers.filter(e => e.active).length === 0 ? (
+                    <p className="text-xs text-gray-400 text-center py-6">لا يوجد مهندسين نشطين مسجلين في النظام حالياً.</p>
+                  ) : (
+                    engineers
+                      .filter(e => e.active)
+                      .map(eng => {
+                        const initials = eng.name ? eng.name.trim().split(' ').map(n => n[0]).slice(0, 2).join('') : 'EM';
+                        return (
+                          <button
+                            key={eng.id}
+                            type="button"
+                            onClick={() => handleAssignAndApprove(eng.id)}
+                            className="w-full p-3 bg-white border border-gray-150 rounded-xl hover:border-[#d4af37] hover:bg-amber-50/10 transition-all flex items-center justify-between gap-4 text-right shadow-sm group"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-[#171714] text-[#d4af37] flex items-center justify-center font-black text-xs shrink-0 group-hover:scale-105 transition-all">
+                                {initials}
+                              </div>
+                              <div>
+                                <span className="font-extrabold text-xs text-gray-900 block">{eng.name}</span>
+                                <span className="text-[10px] text-gray-400 font-bold block mt-0.5">
+                                  {eng.specialization || eng.specialty || 'مهندس مصمم'}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-left shrink-0">
+                              <span className="inline-flex items-center gap-1 text-[10px] bg-purple-50 text-purple-700 font-bold px-2 py-0.5 rounded-md border border-purple-100">
+                                {eng.currentTickets || 0} تذاكر نشطة
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })
+                  )}
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="flex gap-3 pt-3 border-t border-gray-100 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => { setShowAssignModal(false); setAssignTarget(null); }}
+                  className="flex-1 py-3 border border-gray-200 text-gray-500 hover:bg-gray-50 rounded-xl transition-all"
+                >
+                  تراجع وإلغاء القبول
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAssignAndApprove(null)}
+                  className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-all"
+                >
+                  الموافقة بدون تعيين مهندس
                 </button>
               </div>
             </motion.div>

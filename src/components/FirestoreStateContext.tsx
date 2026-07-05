@@ -186,9 +186,11 @@ interface FirebaseStateContextType {
   updateTicketStatus: (id: string, status: TicketStatus) => Promise<void>;
   assignTicket: (id: string, engineerId: string, engineerName: string) => Promise<void>;
   sendTicketMessage: (msg: Omit<Message, 'id' | 'createdAt'>, files?: File[]) => Promise<void>;
+  markMessagesAsRead: (ticketId: string, role: 'admin' | 'client' | 'engineer') => Promise<void>;
   addNotification: (notification: Omit<TicketNotification, 'id' | 'createdAt' | 'read'>) => Promise<void>;
   markNotificationAsRead: (id: string) => Promise<void>;
   findOrCreateTicketByTrackingOrPhone: (queryStr: string) => Promise<Ticket | null>;
+  deleteTicket: (id: string) => Promise<void>;
 }
 
 const FirebaseStateContext = createContext<FirebaseStateContextType | undefined>(undefined);
@@ -255,6 +257,50 @@ const compressAndConvertToBase64 = (file: File, maxWidth: number = 1000, maxHeig
   });
 };
 
+export const seedDefaultEngineers = (): Engineer[] => {
+  return [
+    {
+      id: "eng_ali",
+      name: "علي الكرخي",
+      email: "ali@royalgroup.iq",
+      phone: "07701112223",
+      specialty: "تصميم داخلي وديكور كلاسيكي",
+      specialization: "تصميم داخلي وديكور كلاسيكي",
+      active: true,
+      role: "engineer",
+      createdAt: 1719705600000,
+      currentTickets: 0,
+      currentProjects: 0
+    },
+    {
+      id: "eng_dina",
+      name: "دينا التميمي",
+      email: "dina@royalgroup.iq",
+      phone: "07704445556",
+      specialty: "تصميم مودرن وغرف نوم فاخرة",
+      specialization: "تصميم مودرن وغرف نوم فاخرة",
+      active: true,
+      role: "engineer",
+      createdAt: 1719792000000,
+      currentTickets: 0,
+      currentProjects: 0
+    },
+    {
+      id: "eng_mustafa",
+      name: "مصطفى العبيدي",
+      email: "mustafa@royalgroup.iq",
+      phone: "07707778889",
+      specialty: "مطابخ ذكية وأنظمة إضاءة",
+      specialization: "مطابخ ذكية وأنظمة إضاءة",
+      active: true,
+      role: "engineer",
+      createdAt: 1719878400000,
+      currentTickets: 0,
+      currentProjects: 0
+    }
+  ];
+};
+
 export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
@@ -268,7 +314,7 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   const [socialLinks, setSocialLinks] = useState<SocialLinks>(mockSocialLinks);
   const [bedroomOptions, setBedroomOptions] = useState<BedroomOption[]>(initialBedroomOptions);
   const [bedroomSubmissions, setBedroomSubmissions] = useState<BedroomSubmission[]>([]);
-  const [engineers, setEngineers] = useState<Engineer[]>([]);
+  const [engineers, setEngineers] = useState<Engineer[]>(seedDefaultEngineers());
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [notifications, setNotifications] = useState<TicketNotification[]>([]);
@@ -506,12 +552,24 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       // Subscribe to Engineers
       try {
         const qEngineers = query(collection(db, 'engineers'), orderBy('createdAt', 'desc'));
-        onSnapshot(qEngineers, (snapshot) => {
+        onSnapshot(qEngineers, async (snapshot) => {
           const list: Engineer[] = [];
           snapshot.forEach(doc => {
             list.push(doc.data() as Engineer);
           });
-          setEngineers(list);
+          if (list.length > 0) {
+            setEngineers(list);
+          } else {
+            // Seed default engineers into Firestore
+            try {
+              const defaults = seedDefaultEngineers();
+              for (const eng of defaults) {
+                await setDoc(doc(db, 'engineers', eng.id), eng);
+              }
+            } catch (seedErr) {
+              console.error("Failed to seed default engineers into Firestore:", seedErr);
+            }
+          }
         }, (error) => {
           console.warn("Engineers read blocked or error:", error.message);
         });
@@ -880,6 +938,14 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       imageUrl.push(url);
     }
 
+    const ticketId = await generateTicketId();
+
+    // Auto-select active engineer (least loaded first)
+    const activeEngs = engineers.filter(e => e.active !== false);
+    const assignedEng = activeEngs.length > 0
+      ? [...activeEngs].sort((a, b) => (a.currentTickets || 0) - (b.currentTickets || 0))[0]
+      : null;
+
     const newRequest: DesignRequest = {
       ...req,
       id: newId,
@@ -888,19 +954,94 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       status: 'New',
       requestNumber: reqNum,
       viewed: false,
+      ticketId,
+      createdAt: Date.now(),
+      ...(assignedEng ? {
+        assignedEngineerId: assignedEng.id,
+        assignedEngineerName: assignedEng.name,
+        assignedAt: Date.now()
+      } : {})
+    };
+
+    const newTicket: Ticket = {
+      id: ticketId,
+      requestId: newId,
+      trackingId: reqNum,
+      relatedRequestNumber: reqNum,
+      sourceId: newId,
+      sourceType: 'design_request',
+      clientName: req.name,
+      clientPhone: req.phone,
+      title: `طلب تصميم - ${req.projectType}`,
+      subject: `طلب تصميم - ${req.projectType}`,
+      description: req.adminNotes || `تذكرة تم إنشاؤها تلقائياً لطلب تصميم مخصص رقم ${reqNum}`,
+      status: 'open',
+      attachments: imageUrl,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...(assignedEng ? {
+        assignedEngineerId: assignedEng.id,
+        assignedEngineerName: assignedEng.name,
+        assignedAt: Date.now()
+      } : {})
+    };
+
+    const welcomeContent = assignedEng
+      ? `أهلاً بك يا ${req.name} في نظام المتابعة والدعم لـ Royal Group. تم إنشاء تذكرتك وغرفة المحادثة بنجاح برقم التتبع ${reqNum} وتم تعيين المهندس المصمم [م. ${assignedEng.name}] لمتابعة مشروعك والدردشة معك هنا.`
+      : `أهلاً بك يا ${req.name} في نظام المتابعة والدعم لـ Royal Group. تم إنشاء تذكرتك وغرفة المحادثة بنجاح برقم التتبع ${reqNum}. سيقوم مهندسو التصميم لدينا بمتابعة طلبك والتواصل معك هنا مباشرة.`;
+
+    const systemMsg: Message = {
+      id: `msg_welcome_${Date.now()}`,
+      ticketId,
+      senderId: 'admin',
+      senderName: 'إدارة رويال جروب',
+      senderRole: 'admin',
+      content: welcomeContent,
       createdAt: Date.now()
     };
+
+    let engineerIntroMsg: Message | null = null;
+    if (assignedEng) {
+      engineerIntroMsg = {
+        id: `msg_eng_intro_${Date.now()}`,
+        ticketId,
+        senderId: assignedEng.id,
+        senderName: `م. ${assignedEng.name}`,
+        senderRole: 'engineer',
+        content: `أهلاً بك يا سيد ${req.name}، أنا المهندس ${assignedEng.name} المصمم المسؤول عن طلبك في رويال جروب. لقد اطلعت على التفاصيل وسأبدأ العمل عليها فوراً. يرجى تزويدي بأي متطلبات أو مخططات إضافية هنا لمباشرة الإعداد الفني.`,
+        createdAt: Date.now() + 100
+      };
+    }
 
     if (isFirebaseConnected) {
       try {
         const db = getDb();
         await setDoc(doc(db, 'designRequests', newId), newRequest);
+        await setDoc(doc(db, 'tickets', ticketId), newTicket);
+        await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
+        if (engineerIntroMsg) {
+          await setDoc(doc(db, 'messages', engineerIntroMsg.id), engineerIntroMsg);
+        }
+
+        if (assignedEng) {
+          const updatedCount = (assignedEng.currentTickets || 0) + 1;
+          await updateDoc(doc(db, 'engineers', assignedEng.id), { currentTickets: updatedCount });
+        }
       } catch (error) {
         handleFirestoreError(error, OperationType.CREATE, `designRequests/${newId}`);
       }
     } else {
       // Demo State
       setDesignRequests(prev => [newRequest, ...prev]);
+      setTickets(prev => [newTicket, ...prev]);
+      setMessages(prev => {
+        const next = [...prev, systemMsg];
+        if (engineerIntroMsg) next.push(engineerIntroMsg);
+        return next;
+      });
+      if (assignedEng) {
+        setEngineers(prev => prev.map(e => e.id === assignedEng.id ? { ...e, currentTickets: (e.currentTickets || 0) + 1 } : e));
+      }
     }
 
     return newRequest;
@@ -926,6 +1067,10 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     if (status === 'Approved') {
       const req = designRequests.find(r => r.id === id);
       if (req) {
+        const engId = additionalFields?.assignedEngineerId || req.assignedEngineerId;
+        const engName = additionalFields?.assignedEngineerName || req.assignedEngineerName;
+        const engAt = additionalFields?.assignedAt || req.assignedAt;
+
         await handleAutoCreateTicketOnApproval(
           id,
           'design_request',
@@ -933,7 +1078,10 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
           req.phone,
           `طلب تصميم - ${req.projectType}`,
           `تذكرة تم إنشاؤها تلقائياً لطلب تصميم معتمد رقم ${req.requestNumber || req.id}`,
-          req.requestNumber || req.id
+          req.requestNumber || req.id,
+          engId,
+          engName,
+          engAt
         );
       }
     }
@@ -1077,24 +1225,106 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   const addBedroomSubmission = async (sub: Omit<BedroomSubmission, 'id' | 'createdAt' | 'status'>) => {
     const newId = `sub_${Date.now()}`;
     const reqNum = await generateRequestNumber();
+    const ticketId = await generateTicketId();
+
+    // Auto-select active engineer (least loaded first)
+    const activeEngs = engineers.filter(e => e.active !== false);
+    const assignedEng = activeEngs.length > 0
+      ? [...activeEngs].sort((a, b) => (a.currentTickets || 0) - (b.currentTickets || 0))[0]
+      : null;
+
     const newSubmission: BedroomSubmission = {
       ...sub,
       id: newId,
       status: 'New',
       requestNumber: reqNum,
       viewed: false,
+      ticketId,
+      createdAt: Date.now(),
+      ...(assignedEng ? {
+        assignedEngineerId: assignedEng.id,
+        assignedEngineerName: assignedEng.name,
+        assignedAt: Date.now()
+      } : {})
+    };
+
+    const newTicket: Ticket = {
+      id: ticketId,
+      requestId: newId,
+      trackingId: reqNum,
+      relatedRequestNumber: reqNum,
+      sourceId: newId,
+      sourceType: 'bedroom_submission',
+      clientName: sub.clientName,
+      clientPhone: sub.clientPhone,
+      title: `تصميم غرفة نوم مخصص`,
+      subject: `تصميم غرفة نوم مخصص`,
+      description: `تذكرة تم إنشاؤها تلقائياً لطلب تصميم غرفة نوم رقم ${reqNum}`,
+      status: 'open',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...(assignedEng ? {
+        assignedEngineerId: assignedEng.id,
+        assignedEngineerName: assignedEng.name,
+        assignedAt: Date.now()
+      } : {})
+    };
+
+    const welcomeContent = assignedEng
+      ? `أهلاً بك يا ${sub.clientName} في نظام المتابعة والدعم لـ Royal Group. تم إنشاء تذكرتك وغرفة المحادثة بنجاح برقم التتبع ${reqNum} وتم تعيين المهندس المصمم [م. ${assignedEng.name}] لمتابعة مشروعك والدردشة معك هنا.`
+      : `أهلاً بك يا ${sub.clientName} في نظام المتابعة والدعم لـ Royal Group. تم إنشاء تذكرتك وغرفة المحادثة بنجاح برقم التتبع ${reqNum}. سيقوم مهندسو التصميم لدينا بمتابعة طلبك والتواصل معك هنا مباشرة.`;
+
+    const systemMsg: Message = {
+      id: `msg_welcome_${Date.now()}`,
+      ticketId,
+      senderId: 'admin',
+      senderName: 'إدارة رويال جروب',
+      senderRole: 'admin',
+      content: welcomeContent,
       createdAt: Date.now()
     };
+
+    let engineerIntroMsg: Message | null = null;
+    if (assignedEng) {
+      engineerIntroMsg = {
+        id: `msg_eng_intro_${Date.now()}`,
+        ticketId,
+        senderId: assignedEng.id,
+        senderName: `م. ${assignedEng.name}`,
+        senderRole: 'engineer',
+        content: `أهلاً بك يا سيد ${sub.clientName}، أنا المهندس ${assignedEng.name} المصمم المسؤول عن تذكرة تصميم غرفة نومك في رويال جروب. لقد استلمت تفاصيل طلبك وخياراتك من الألوان والموديلات وسأبدأ بمراجعتها وتحضير التصاميم المخصصة لك هنا.`,
+        createdAt: Date.now() + 100
+      };
+    }
 
     if (isFirebaseConnected) {
       try {
         const db = getDb();
         await setDoc(doc(db, 'bedroomSubmissions', newId), newSubmission);
+        await setDoc(doc(db, 'tickets', ticketId), newTicket);
+        await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
+        if (engineerIntroMsg) {
+          await setDoc(doc(db, 'messages', engineerIntroMsg.id), engineerIntroMsg);
+        }
+
+        if (assignedEng) {
+          const updatedCount = (assignedEng.currentTickets || 0) + 1;
+          await updateDoc(doc(db, 'engineers', assignedEng.id), { currentTickets: updatedCount });
+        }
       } catch (error) {
         handleFirestoreError(error, OperationType.CREATE, `bedroomSubmissions/${newId}`);
       }
     } else {
       setBedroomSubmissions(prev => [newSubmission, ...prev]);
+      setTickets(prev => [newTicket, ...prev]);
+      setMessages(prev => {
+        const next = [...prev, systemMsg];
+        if (engineerIntroMsg) next.push(engineerIntroMsg);
+        return next;
+      });
+      if (assignedEng) {
+        setEngineers(prev => prev.map(e => e.id === assignedEng.id ? { ...e, currentTickets: (e.currentTickets || 0) + 1 } : e));
+      }
     }
 
     return newSubmission;
@@ -1119,6 +1349,10 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     if (status === 'Approved') {
       const sub = bedroomSubmissions.find(s => s.id === id);
       if (sub) {
+        const engId = additionalFields?.assignedEngineerId || sub.assignedEngineerId;
+        const engName = additionalFields?.assignedEngineerName || sub.assignedEngineerName;
+        const engAt = additionalFields?.assignedAt || sub.assignedAt;
+
         await handleAutoCreateTicketOnApproval(
           id,
           'bedroom_submission',
@@ -1126,7 +1360,10 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
           sub.clientPhone,
           `تصميم غرفة نوم مخصص`,
           `تذكرة تم إنشاؤها تلقائياً لطلب تصميم غرفة نوم معتمد رقم ${sub.requestNumber || sub.id}`,
-          sub.requestNumber || sub.id
+          sub.requestNumber || sub.id,
+          engId,
+          engName,
+          engAt
         );
       }
     }
@@ -1248,7 +1485,10 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     clientPhone: string,
     title: string,
     description: string,
-    trackingId: string
+    trackingId: string,
+    assignedEngineerId?: string,
+    assignedEngineerName?: string,
+    assignedAt?: number
   ) => {
     // Check if ticket already exists
     const existing = tickets.find(t => t.requestId === requestId || t.sourceId === requestId);
@@ -1267,8 +1507,23 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       description,
       status: 'open',
       createdAt: Date.now(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      assignedEngineerId,
+      assignedEngineerName,
+      assignedAt
     };
+
+    if (assignedEngineerId) {
+      const eng = engineers.find(e => e.id === assignedEngineerId);
+      if (eng) {
+        const updatedCount = (eng.currentTickets || 0) + 1;
+        await updateEngineer(assignedEngineerId, { currentTickets: updatedCount });
+      }
+    }
+
+    const welcomeContent = assignedEngineerName
+      ? `أهلاً بك يا ${clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId} وتم تعيين المهندس المصمم [${assignedEngineerName}] لمتابعة مشروعك والدردشة معك هنا.`
+      : `أهلاً بك يا ${clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`;
 
     if (isFirebaseConnected) {
       try {
@@ -1282,7 +1537,7 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
           senderId: 'admin',
           senderName: 'إدارة رويال جروب',
           senderRole: 'admin',
-          content: `أهلاً بك يا ${clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
+          content: welcomeContent,
           createdAt: Date.now()
         };
         await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
@@ -1297,7 +1552,7 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
         senderId: 'admin',
         senderName: 'إدارة رويال جروب',
         senderRole: 'admin',
-        content: `أهلاً بك يا ${clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
+        content: welcomeContent,
         createdAt: Date.now()
       };
       setMessages(prev => [...prev, systemMsg]);
@@ -1340,11 +1595,13 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
         id: ticketId,
         requestId: matchedRequest.id,
         trackingId: matchedRequest.requestNumber || matchedRequest.id,
+        relatedRequestNumber: matchedRequest.requestNumber,
         sourceId: matchedRequest.id,
         sourceType: 'design_request',
         clientName: matchedRequest.name,
         clientPhone: matchedRequest.phone,
         title: `طلب تصميم - ${matchedRequest.projectType}`,
+        subject: `طلب تصميم - ${matchedRequest.projectType}`,
         description: `تذكرة تم إنشاؤها تلقائياً لطلب تصميم رقم ${matchedRequest.requestNumber || matchedRequest.id}`,
         status: 'open',
         createdAt: Date.now(),
@@ -1401,11 +1658,13 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
         id: ticketId,
         requestId: matchedSubmission.id,
         trackingId: matchedSubmission.requestNumber || matchedSubmission.id,
+        relatedRequestNumber: matchedSubmission.requestNumber,
         sourceId: matchedSubmission.id,
         sourceType: 'bedroom_submission',
         clientName: matchedSubmission.clientName,
         clientPhone: matchedSubmission.clientPhone,
         title: `تصميم غرفة نوم مخصص`,
+        subject: `تصميم غرفة نوم مخصص`,
         description: `تذكرة تم إنشاؤها تلقائياً لطلب تصميم غرفة نوم رقم ${matchedSubmission.requestNumber || matchedSubmission.id}`,
         status: 'open',
         createdAt: Date.now(),
@@ -1471,6 +1730,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     const newTicket: Ticket = {
       ...ticket,
       id: ticketId,
+      title: (ticket as any).title || (ticket as any).subject || 'تذكرة دعم فني',
+      subject: (ticket as any).subject || (ticket as any).title || 'تذكرة دعم فني',
       status: 'open',
       attachments,
       createdAt: Date.now(),
@@ -1511,6 +1772,22 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     return newTicket;
+  };
+
+  /**
+   * Project Ticket System: Delete Ticket (Admin)
+   */
+  const deleteTicket = async (id: string) => {
+    if (isFirebaseConnected) {
+      try {
+        const db = getDb();
+        await deleteDoc(doc(db, 'tickets', id));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `tickets/${id}`);
+      }
+    } else {
+      setTickets(prev => prev.filter(t => t.id !== id));
+    }
   };
 
   /**
@@ -1761,6 +2038,34 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  /**
+   * Project Ticket System: Mark all messages for a ticket as read by current role
+   */
+  const markMessagesAsRead = async (ticketId: string, role: 'admin' | 'client' | 'engineer') => {
+    const unreadMessages = messages.filter(
+      m => m.ticketId === ticketId && m.senderRole !== role && !m.read
+    );
+
+    if (unreadMessages.length === 0) return;
+
+    if (isFirebaseConnected) {
+      try {
+        const db = getDb();
+        for (const m of unreadMessages) {
+          await updateDoc(doc(db, 'messages', m.id), { read: true });
+        }
+      } catch (error) {
+        console.error("Error marking messages as read in Firestore:", error);
+      }
+    } else {
+      setMessages(prev =>
+        prev.map(m =>
+          m.ticketId === ticketId && m.senderRole !== role ? { ...m, read: true } : m
+        )
+      );
+    }
+  };
+
   return (
     <FirebaseStateContext.Provider value={{
       isFirebaseConnected,
@@ -1801,9 +2106,11 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       updateTicketStatus,
       assignTicket,
       sendTicketMessage,
+      markMessagesAsRead,
       addNotification,
       markNotificationAsRead,
-      findOrCreateTicketByTrackingOrPhone
+      findOrCreateTicketByTrackingOrPhone,
+      deleteTicket
     }}>
       {children}
     </FirebaseStateContext.Provider>

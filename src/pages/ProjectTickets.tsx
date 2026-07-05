@@ -7,7 +7,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useFirebaseState } from '../components/FirestoreStateContext';
 import { 
   Plus, MessageSquare, Send, Paperclip, User, Shield, Users, Ticket as TicketIcon, CheckCircle2, 
-  Clock, AlertCircle, RefreshCw, ChevronLeft, Search, UserCheck, Check, LogOut, FileText, Bell, Trash2, Edit
+  Clock, AlertCircle, RefreshCw, ChevronLeft, Search, UserCheck, Check, LogOut, FileText, Bell, Trash2, Edit,
+  CheckCheck, Eye, Download, Volume2, Sparkles, ExternalLink
 } from 'lucide-react';
 import { Ticket, Engineer, Message, TicketStatus, TicketNotification } from '../types';
 
@@ -27,6 +28,7 @@ export const ProjectTickets: React.FC = () => {
     updateTicketStatus,
     assignTicket,
     sendTicketMessage,
+    markMessagesAsRead,
     markNotificationAsRead,
     findOrCreateTicketByTrackingOrPhone
   } = useFirebaseState();
@@ -37,14 +39,6 @@ export const ProjectTickets: React.FC = () => {
   // Client States
   const [clientSearchId, setClientSearchId] = useState('');
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
-  const [isOpeningNewTicket, setIsOpeningNewTicket] = useState(false);
-  const [newTicketName, setNewTicketName] = useState('');
-  const [newTicketPhone, setNewTicketPhone] = useState('');
-  const [newTicketSubject, setNewTicketSubject] = useState('');
-  const [newTicketRequestNum, setNewTicketRequestNum] = useState('');
-  const [newTicketDescription, setNewTicketDescription] = useState('');
-  const [newTicketFiles, setNewTicketFiles] = useState<File[]>([]);
-  const [isCreating, setIsCreating] = useState(false);
   const [clientError, setClientError] = useState('');
   const [clientSuccess, setClientSuccess] = useState('');
 
@@ -73,9 +67,73 @@ export const ProjectTickets: React.FC = () => {
   const [chatFiles, setChatFiles] = useState<File[]>([]);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   
+  // WhatsApp Business additions
+  const [activePreviewImage, setActivePreviewImage] = useState<string | null>(null);
+  const [activeToast, setActiveToast] = useState<{ id: string; title: string; message: string } | null>(null);
+  
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const msgFileInputRef = useRef<HTMLInputElement>(null);
+
+  const activeTicketMessages = messages.filter(m => m.ticketId === selectedTicketId);
+
+  // Helper to play a soft, luxurious mechanical beep notification (HTML5 AudioContext, no external files)
+  const playNotificationSound = () => {
+    try {
+      const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(587.33, context.currentTime); // D5 note
+      gain.gain.setValueAtTime(0.12, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.15);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + 0.15);
+    } catch (e) {
+      console.warn("AudioContext playback blocked or failed:", e);
+    }
+  };
+
+  // Track messages length to play sound & show toast when new messages are received from others
+  const prevMessagesCountRef = useRef(activeTicketMessages.length);
+
+  useEffect(() => {
+    if (activeTicketMessages.length > prevMessagesCountRef.current) {
+      const lastMsg = activeTicketMessages[activeTicketMessages.length - 1];
+      if (lastMsg) {
+        const user = getCurrentUserInfo();
+        // Determine if it was sent by someone else
+        const isMe = 
+          (user && lastMsg.senderRole === user.role && lastMsg.senderId === user.id) ||
+          (user && lastMsg.senderRole === 'admin' && user.role === 'admin') ||
+          (user && lastMsg.senderRole === 'client' && user.role === 'client') ||
+          (user && lastMsg.senderRole === 'engineer' && lastMsg.senderId === activeEngineerId);
+
+        if (!isMe && lastMsg.senderName && !lastMsg.senderName.includes('نظام')) {
+          playNotificationSound();
+          setActiveToast({
+            id: lastMsg.id,
+            title: `رسالة جديدة من ${lastMsg.senderName}`,
+            message: lastMsg.content || 'أرسل مرفقاً جديداً'
+          });
+          // Auto dismiss toast
+          setTimeout(() => {
+            setActiveToast(current => current?.id === lastMsg.id ? null : current);
+          }, 4500);
+        }
+      }
+    }
+    prevMessagesCountRef.current = activeTicketMessages.length;
+  }, [activeTicketMessages, activeEngineerId, currentRole]);
+
+  // Real-Time Read Receipts (Mark messages as read when looking at them)
+  useEffect(() => {
+    if (selectedTicketId && markMessagesAsRead) {
+      markMessagesAsRead(selectedTicketId, currentRole);
+    }
+  }, [selectedTicketId, activeTicketMessages.length, currentRole]);
 
   // Auto Scroll Chat to Bottom
   useEffect(() => {
@@ -83,6 +141,21 @@ export const ProjectTickets: React.FC = () => {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, selectedTicketId]);
+
+  // Load client ticket ID from localStorage on mount or tab change
+  useEffect(() => {
+    const savedTicketId = localStorage.getItem('active_client_ticket_id');
+    const forceClient = localStorage.getItem('force_client_role');
+    if (savedTicketId) {
+      if (forceClient === 'true' || currentRole !== 'client') {
+        setCurrentRole('client');
+        localStorage.removeItem('force_client_role');
+      }
+      setSelectedTicketId(savedTicketId);
+      // Clean up so it doesn't force it forever if they want to clear or switch roles
+      localStorage.removeItem('active_client_ticket_id');
+    }
+  }, [currentRole]);
 
   // If role changes, reset ticket selection to prevent cross-leakage in test mode
   useEffect(() => {
@@ -145,7 +218,6 @@ export const ProjectTickets: React.FC = () => {
 
   const activeTickets = getFilteredTickets();
   const selectedTicket = tickets.find(t => t.id === selectedTicketId);
-  const activeTicketMessages = messages.filter(m => m.ticketId === selectedTicketId);
 
   // Active user unread notifications count
   const getUserNotifications = () => {
@@ -167,47 +239,6 @@ export const ProjectTickets: React.FC = () => {
   const unreadNotifsCount = userNotifications.filter(n => !n.read).length;
 
   // Handlers
-  const handleCreateTicket = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setClientError('');
-    setClientSuccess('');
-
-    if (!newTicketName.trim() || !newTicketPhone.trim() || !newTicketSubject.trim() || !newTicketDescription.trim()) {
-      setClientError('يرجى ملء جميع الحقول الإجبارية الفعالة.');
-      return;
-    }
-
-    setIsCreating(true);
-    try {
-      const ticketPayload = {
-        clientName: newTicketName,
-        clientPhone: newTicketPhone,
-        subject: newTicketSubject,
-        description: newTicketDescription,
-        relatedRequestNumber: newTicketRequestNum.trim() || undefined
-      };
-
-      const created = await createTicket(ticketPayload, newTicketFiles);
-      setClientSuccess(`تم إنشاء تذكرتك الفنية بنجاح برقم: ${created.id}. احتفظ بهذا الرقم لتتبع التحديثات والدردشة مع مهندس التصميم.`);
-      
-      // Reset form
-      setNewTicketName('');
-      setNewTicketPhone('');
-      setNewTicketSubject('');
-      setNewTicketRequestNum('');
-      setNewTicketDescription('');
-      setNewTicketFiles([]);
-      setIsOpeningNewTicket(false);
-      
-      // Auto-select and load the newly created ticket chat room
-      setSelectedTicketId(created.id);
-    } catch (err: any) {
-      setClientError('حدث خطأ أثناء تقديم التذكرة. يرجى المحاولة لاحقاً.');
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
   const handleSendChatMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTicketId) return;
@@ -484,37 +515,20 @@ export const ProjectTickets: React.FC = () => {
                 <div>
                   <h3 className="font-bold text-lg text-gray-900 flex items-center gap-2">
                     <TicketIcon className="w-5 h-5 text-[#d4af37]" />
-                    خيارات تذاكر العميل
+                    متابعة وتتبع طلبك
                   </h3>
-                  <p className="text-xs text-gray-500 mt-1">ابدأ بفتح تذكرة فنية جديدة لمشروعك أو تتبع حالة تذكرة قيد المعالجة.</p>
+                  <p className="text-xs text-gray-500 mt-1">أدخل رقم تتبع طلبك (الرقم التلقائي RG-XXXXXX) أو رقم هاتفك للانضمام مباشرة لغرفة المتابعة والمحادثة الخاصة مع كادر المهندسين.</p>
                 </div>
 
                 <div className="space-y-3">
-                  <button
-                    onClick={() => {
-                      setIsOpeningNewTicket(true);
-                      setSelectedTicketId(null);
-                    }}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-[#171714] text-[#d4af37] border border-[#d4af37]/30 rounded-xl text-sm font-bold hover:bg-[#20201c] hover:text-white transition-all duration-300"
-                  >
-                    <Plus className="w-4 h-4" />
-                    فتح تذكرة فنية ومتابعة جديدة
-                  </button>
-
-                  <div className="relative flex py-2 items-center">
-                    <div className="flex-grow border-t border-gray-100"></div>
-                    <span className="flex-shrink mx-4 text-gray-400 text-[11px] font-bold">أو تتبع تذكرة سابقة</span>
-                    <div className="flex-grow border-t border-gray-100"></div>
-                  </div>
-
                   <form onSubmit={handleClientSearch} className="space-y-3">
                     <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1.5">رقم التذكرة أو رقم الهاتف الفعال:</label>
+                      <label className="block text-xs font-bold text-gray-700 mb-1.5">رقم تتبع الطلب أو رقم الهاتف الفعال:</label>
                       <div className="relative">
                         <input
                           type="text"
                           required
-                          placeholder="مثال: RG-TKT-1001 أو 0770..."
+                          placeholder="مثال: RG-000001 أو 0770..."
                           value={clientSearchId}
                           onChange={(e) => setClientSearchId(e.target.value)}
                           className="w-full pl-10 pr-4 py-2.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-1 focus:ring-[#d4af37] focus:border-[#d4af37] outline-none text-right font-semibold"
@@ -904,267 +918,121 @@ export const ProjectTickets: React.FC = () => {
             )}
 
             {/* LIST OF ACTIVE TICKETS (Shared view depending on role query) */}
-            {!isOpeningNewTicket && (
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-xl p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-base text-gray-900 flex items-center gap-2">
-                    <TicketIcon className="w-5 h-5 text-[#d4af37]" />
-                    {currentRole === 'admin' ? 'جميع تذاكر النظام' : 'التذاكر الفعالة المتاحة'}
-                  </h3>
-                  <span className="bg-gray-100 text-gray-800 text-xs font-bold px-2 py-0.5 rounded-full">
-                    {activeTickets.length} تذكرة
-                  </span>
-                </div>
-
-                {/* ADMIN STATUS CONTROLS FOR TICKETS LIST */}
-                {currentRole === 'admin' && (
-                  <div className="space-y-3">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="البحث بالعميل، بالرقم، بالمهندس..."
-                        value={adminSearchQuery}
-                        onChange={(e) => setAdminSearchQuery(e.target.value)}
-                        className="w-full pr-4 pl-10 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:ring-1 focus:ring-[#d4af37]"
-                      />
-                      <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
-                    </div>
-
-                    <div className="flex flex-wrap gap-1.5 text-[10px] font-bold">
-                      <button
-                        onClick={() => setAdminStatusFilter('all')}
-                        className={`px-2.5 py-1 rounded-lg border transition-all ${
-                          adminStatusFilter === 'all'
-                            ? 'bg-[#171714] text-[#d4af37] border-[#d4af37]/35'
-                            : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
-                        }`}
-                      >
-                        الكل
-                      </button>
-                      <button
-                        onClick={() => setAdminStatusFilter('open')}
-                        className={`px-2.5 py-1 rounded-lg border transition-all ${
-                          adminStatusFilter === 'open'
-                            ? 'bg-blue-500 text-white border-blue-500'
-                            : 'bg-gray-50 text-gray-500 border-gray-200'
-                        }`}
-                      >
-                        مفتوحة
-                      </button>
-                      <button
-                        onClick={() => setAdminStatusFilter('in_progress')}
-                        className={`px-2.5 py-1 rounded-lg border transition-all ${
-                          adminStatusFilter === 'in_progress'
-                            ? 'bg-[#d4af37] text-[#171714] border-[#d4af37]'
-                            : 'bg-gray-50 text-gray-500 border-gray-200'
-                        }`}
-                      >
-                        قيد المعالجة
-                      </button>
-                      <button
-                        onClick={() => setAdminStatusFilter('closed')}
-                        className={`px-2.5 py-1 rounded-lg border transition-all ${
-                          adminStatusFilter === 'closed'
-                            ? 'bg-emerald-500 text-white border-emerald-500'
-                            : 'bg-gray-50 text-gray-500 border-gray-200'
-                        }`}
-                      >
-                        مغلقة
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* THE TICKET SCROLLABLE LIST */}
-                <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                  {activeTickets.length === 0 ? (
-                    <div className="text-center py-8 text-gray-400 text-xs">
-                      <AlertCircle className="w-8 h-8 mx-auto text-gray-300 mb-2" />
-                      {currentRole === 'client' 
-                        ? 'ابحث عن تذكرتك باستخدام الرقم أعلاه لبدء المتابعة والدردشة.'
-                        : 'لا توجد تذاكر متطابقة حالياً.'}
-                    </div>
-                  ) : (
-                    activeTickets.map(t => (
-                      <div
-                        key={t.id}
-                        onClick={() => setSelectedTicketId(t.id)}
-                        className={`p-3.5 rounded-xl border cursor-pointer text-right transition-all hover:shadow-md ${
-                          selectedTicketId === t.id
-                            ? 'bg-[#d4af37]/5 border-[#d4af37] shadow-sm'
-                            : 'bg-gray-50 border-gray-100 hover:bg-gray-100/70'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <span className="font-mono font-bold text-xs text-gray-900">{t.id}</span>
-                          {getStatusBadge(t.status)}
-                        </div>
-                        
-                        <h4 className="font-bold text-xs text-gray-800 mt-2 line-clamp-1">{t.subject}</h4>
-                        
-                        <div className="flex justify-between items-center text-[10px] text-gray-400 mt-3 border-t border-gray-200/50 pt-2 font-semibold">
-                          <span>العميل: {t.clientName}</span>
-                          <span>
-                            {t.assignedEngineerName ? `م. ${t.assignedEngineerName}` : 'بانتظار تعيين مهندس'}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-base text-gray-900 flex items-center gap-2">
+                  <TicketIcon className="w-5 h-5 text-[#d4af37]" />
+                  {currentRole === 'admin' ? 'جميع تذاكر النظام' : 'التذاكر الفعالة المتاحة'}
+                </h3>
+                <span className="bg-gray-100 text-gray-800 text-xs font-bold px-2 py-0.5 rounded-full">
+                  {activeTickets.length} تذكرة
+                </span>
               </div>
-            )}
+
+              {/* ADMIN STATUS CONTROLS FOR TICKETS LIST */}
+              {currentRole === 'admin' && (
+                <div className="space-y-3">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="البحث بالعميل، بالرقم، بالمهندس..."
+                      value={adminSearchQuery}
+                      onChange={(e) => setAdminSearchQuery(e.target.value)}
+                      className="w-full pr-4 pl-10 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:ring-1 focus:ring-[#d4af37]"
+                    />
+                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 text-[10px] font-bold">
+                    <button
+                      onClick={() => setAdminStatusFilter('all')}
+                      className={`px-2.5 py-1 rounded-lg border transition-all ${
+                        adminStatusFilter === 'all'
+                          ? 'bg-[#171714] text-[#d4af37] border-[#d4af37]/35'
+                          : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      الكل
+                    </button>
+                    <button
+                      onClick={() => setAdminStatusFilter('open')}
+                      className={`px-2.5 py-1 rounded-lg border transition-all ${
+                        adminStatusFilter === 'open'
+                          ? 'bg-blue-500 text-white border-blue-500'
+                          : 'bg-gray-50 text-gray-500 border-gray-200'
+                      }`}
+                    >
+                      مفتوحة
+                    </button>
+                    <button
+                      onClick={() => setAdminStatusFilter('in_progress')}
+                      className={`px-2.5 py-1 rounded-lg border transition-all ${
+                        adminStatusFilter === 'in_progress'
+                          ? 'bg-[#d4af37] text-[#171714] border-[#d4af37]'
+                          : 'bg-gray-50 text-gray-500 border-gray-200'
+                      }`}
+                    >
+                      قيد المعالجة
+                    </button>
+                    <button
+                      onClick={() => setAdminStatusFilter('closed')}
+                      className={`px-2.5 py-1 rounded-lg border transition-all ${
+                        adminStatusFilter === 'closed'
+                          ? 'bg-emerald-500 text-white border-emerald-500'
+                          : 'bg-gray-50 text-gray-500 border-gray-200'
+                      }`}
+                    >
+                      مغلقة
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* THE TICKET SCROLLABLE LIST */}
+              <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                {activeTickets.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400 text-xs">
+                    <AlertCircle className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+                    {currentRole === 'client' 
+                      ? 'ابحث عن تذكرتك باستخدام الرقم أعلاه لبدء المتابعة والدردشة.'
+                      : 'لا توجد تذاكر متطابقة حالياً.'}
+                  </div>
+                ) : (
+                  activeTickets.map(t => (
+                    <div
+                      key={t.id}
+                      onClick={() => setSelectedTicketId(t.id)}
+                      className={`p-3.5 rounded-xl border cursor-pointer text-right transition-all hover:shadow-md ${
+                        selectedTicketId === t.id
+                          ? 'bg-[#d4af37]/5 border-[#d4af37] shadow-sm'
+                          : 'bg-gray-50 border-gray-100 hover:bg-gray-100/70'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <span className="font-mono font-bold text-xs text-gray-900">{t.id}</span>
+                        {getStatusBadge(t.status)}
+                      </div>
+                      
+                      <h4 className="font-bold text-xs text-gray-800 mt-2 line-clamp-1">{t.subject}</h4>
+                      
+                      <div className="flex justify-between items-center text-[10px] text-gray-400 mt-3 border-t border-gray-200/50 pt-2 font-semibold">
+                        <span>العميل: {t.clientName}</span>
+                        <span>
+                          {t.assignedEngineerName ? `م. ${t.assignedEngineerName}` : 'بانتظار تعيين مهندس'}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
 
           </div>
 
           {/* MAIN CHAT AND INTERACTION PANEL (8 of 12) */}
           <div className="lg:col-span-8">
             
-            {/* SCREEN 1: CLIENT OPENING NEW TICKET */}
-            {currentRole === 'client' && isOpeningNewTicket ? (
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-xl p-6 sm:p-8 space-y-6">
-                <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-                  <div>
-                    <h2 className="font-black text-xl text-gray-900">فتح تذكرة دعم فني ومشروع جديدة</h2>
-                    <p className="text-xs text-gray-400 mt-1">يرجى تعبئة كافة الحقول ليقوم كادر المهندسين بالاطلاع والتجاوب السريع.</p>
-                  </div>
-                  <button
-                    onClick={() => setIsOpeningNewTicket(false)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                    رجوع
-                  </button>
-                </div>
-
-                <form onSubmit={handleCreateTicket} className="space-y-4 text-xs font-semibold">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-gray-700 mb-1.5">اسم العميل بالكامل <span className="text-rose-500">*</span>:</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="مثال: صالح العراقي"
-                        value={newTicketName}
-                        onChange={(e) => setNewTicketName(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:ring-1 focus:ring-[#d4af37]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-gray-700 mb-1.5">رقم هاتف الواتساب الفعال <span className="text-rose-500">*</span>:</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="مثال: 07704679311"
-                        value={newTicketPhone}
-                        onChange={(e) => setNewTicketPhone(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:ring-1 focus:ring-[#d4af37] text-left"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-gray-700 mb-1.5">عنوان المشكلة / عنوان التذكرة <span className="text-rose-500">*</span>:</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="مثال: تعديل أبعاد الصالة الرئيسية"
-                        value={newTicketSubject}
-                        onChange={(e) => setNewTicketSubject(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:ring-1 focus:ring-[#d4af37]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-gray-700 mb-1.5">رقم طلب التصميم المرتبط (إن وجد):</label>
-                      <select
-                        value={newTicketRequestNum}
-                        onChange={(e) => setNewTicketRequestNum(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:ring-1 focus:ring-[#d4af37]"
-                      >
-                        <option value="">لا يوجد طلب تصميم سابق (تذكرة حرة)</option>
-                        {designRequests.map(r => (
-                          <option key={r.id} value={r.requestNumber}>
-                            طلب معتمد: {r.requestNumber} ({r.projectType} - {r.name})
-                          </option>
-                        ))}
-                        {bedroomSubmissions.map(b => (
-                          <option key={b.id} value={b.requestNumber}>
-                            نموذج غرف نوم: {b.requestNumber} (العميل: {b.clientName})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-gray-700 mb-1.5">تفاصيل وشرح الملاحظات الفنية للمهندس المصمم <span className="text-rose-500">*</span>:</label>
-                    <textarea
-                      required
-                      rows={5}
-                      placeholder="صف لنا بالتفصيل التعديلات، الاستفسار، أو المشكلة التي ترغب بمتابعتها مع مهندس رويال المختص..."
-                      value={newTicketDescription}
-                      onChange={(e) => setNewTicketDescription(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:ring-1 focus:ring-[#d4af37] leading-relaxed resize-none"
-                    ></textarea>
-                  </div>
-
-                  <div>
-                    <label className="block text-gray-700 mb-1.5">إرفاق مخططات هندسية أو ملفات صور داعمة (اختياري):</label>
-                    <div 
-                      onClick={() => fileInputRef.current?.click()}
-                      className="border-2 border-dashed border-gray-200 hover:border-[#d4af37]/40 rounded-2xl p-5 text-center cursor-pointer bg-gray-50/50 hover:bg-gray-50 transition-all"
-                    >
-                      <Paperclip className="w-6 h-6 text-gray-400 mx-auto mb-2" />
-                      <span className="text-xs text-gray-500 block">اسحب وأفلت الملفات هنا، أو انقر للتصفح من جهازك</span>
-                      <span className="text-[10px] text-gray-400 block mt-1">الملفات المدعومة: الصور والمخططات الهندسية PDF</span>
-                      
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        multiple
-                        className="hidden"
-                        onChange={(e) => {
-                          if (e.target.files) {
-                            setNewTicketFiles(Array.from(e.target.files));
-                          }
-                        }}
-                      />
-                    </div>
-
-                    {newTicketFiles.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {newTicketFiles.map((file, idx) => (
-                          <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#171714] text-white rounded-lg text-[10px]">
-                            <FileText className="w-3.5 h-3.5 text-[#d4af37]" />
-                            {file.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex gap-3 justify-end pt-4">
-                    <button
-                      type="submit"
-                      disabled={isCreating}
-                      className="bg-[#d4af37] text-[#171714] font-black px-6 py-3 rounded-xl hover:bg-[#b8952b] transition-all flex items-center gap-2 shadow-lg shadow-[#d4af37]/10 disabled:opacity-50"
-                    >
-                      {isCreating ? 'جاري تقديم التذكرة لرويال...' : 'تقديم تذكرة المشروع والبدء'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsOpeningNewTicket(false)}
-                      className="px-5 py-3 rounded-xl border border-gray-200 text-gray-600 font-bold hover:bg-gray-50 transition-all"
-                    >
-                      إلغاء الأمر
-                    </button>
-                  </div>
-                </form>
-              </div>
-            ) : selectedTicket ? (
+            {selectedTicket ? (
               
               /* SCREEN 2: ACTIVE TICKET DETAIL AND CHAT ROOM CONTAINER */
               <div className="bg-white rounded-2xl border border-gray-100 shadow-xl overflow-hidden flex flex-col h-[700px]">
@@ -1272,17 +1140,21 @@ export const ProjectTickets: React.FC = () => {
 
                   {/* ACTIVE CHAT THREAD MESSAGES */}
                   {activeTicketMessages.length === 0 ? (
-                    <div className="text-center py-6 text-gray-400 text-xs">لا توجد رسائل دردشة فنية في هذه الغرفة الخاصة بعد.</div>
+                    <div className="text-center py-12 text-gray-400 text-xs font-bold bg-[#faf9f6]/30 rounded-2xl border border-dashed border-gray-200">
+                      <MessageSquare className="w-10 h-10 mx-auto text-gray-300 mb-2.5 animate-bounce" />
+                      <span>لا توجد رسائل دردشة فنية في هذه الغرفة الخاصة بعد.</span>
+                    </div>
                   ) : (
                     activeTicketMessages.map((msg) => {
-                      const isSystem = msg.senderId === 'admin' && msg.senderName.includes('نظام');
+                      const isSystem = (msg.senderId === 'admin' && msg.senderName.includes('نظام')) || msg.senderName.includes('تنبيه');
                       
                       if (isSystem) {
                         return (
-                          <div key={msg.id} className="flex justify-center my-2">
-                            <span className="bg-[#171714]/5 text-gray-500 text-[10px] font-bold px-3 py-1.5 rounded-full border border-gray-200/50 text-center max-w-md">
-                              {msg.content}
-                            </span>
+                          <div key={msg.id} className="flex justify-center my-4">
+                            <div className="bg-[#171714] border border-[#d4af37]/25 text-white text-[10px] sm:text-xs font-bold px-4 py-2 rounded-xl text-center max-w-md shadow-lg flex items-center gap-2">
+                              <Shield className="w-3.5 h-3.5 text-[#d4af37] shrink-0" />
+                              <span className="text-gray-200">{msg.content}</span>
+                            </div>
                           </div>
                         );
                       }
@@ -1294,53 +1166,148 @@ export const ProjectTickets: React.FC = () => {
                         (currentRole === 'client' && msg.senderRole === 'client');
 
                       return (
-                        <div key={msg.id} className={`flex flex-col ${isMe ? 'items-start' : 'items-end'}`}>
+                        <div key={msg.id} className={`flex flex-col ${isMe ? 'items-start' : 'items-end'} mb-1`}>
                           
-                          <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm text-right ${
+                          <div className={`max-w-[85%] sm:max-w-[70%] rounded-2xl p-3.5 shadow-sm text-right transition-all hover:shadow-md ${
                             isMe 
-                              ? 'bg-[#171714] text-white rounded-bl-none' 
+                              ? 'bg-[#171714] text-white rounded-bl-none border border-[#d4af37]/20' 
                               : 'bg-white border border-gray-100 text-gray-900 rounded-br-none'
                           }`}>
                             
                             {/* Sender Info Line */}
-                            <p className={`text-[10px] font-black mb-1.5 ${isMe ? 'text-[#d4af37]' : 'text-gray-400'}`}>
-                              {msg.senderName} ({
-                                msg.senderRole === 'admin' ? 'الإدارة' :
-                                msg.senderRole === 'engineer' ? 'المهندس المصمم' : 'العميل'
-                              })
+                            <p className={`text-[10px] font-black mb-1.5 flex items-center justify-between gap-2 ${isMe ? 'text-[#d4af37]' : 'text-gray-400'}`}>
+                              <span>
+                                {msg.senderName} ({
+                                  msg.senderRole === 'admin' ? 'الإدارة' :
+                                  msg.senderRole === 'engineer' ? 'المهندس المصمم' : 'العميل'
+                                })
+                              </span>
                             </p>
 
                             {/* Message content */}
-                            <p className="text-xs font-semibold leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                            {msg.content && (
+                              <p className="text-xs sm:text-sm font-semibold leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                            )}
 
-                            {/* Message Attachments */}
+                            {/* Message Attachments: WhatsApp Style image & PDF rendering */}
                             {msg.attachments && msg.attachments.length > 0 && (
-                              <div className="mt-3 border-t border-gray-100/20 pt-2.5 space-y-1.5">
-                                {msg.attachments.map((att, idx) => (
-                                  <a
-                                    key={idx}
-                                    href={att.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                                      isMe 
-                                        ? 'bg-white/10 hover:bg-white/20 text-white' 
-                                        : 'bg-gray-50 border border-gray-100 text-gray-700 hover:border-[#d4af37]'
-                                    }`}
-                                  >
-                                    <Paperclip className="w-3 h-3 text-[#d4af37]" />
-                                    <span>{att.name || `ملف مرفق ${idx + 1}`}</span>
-                                  </a>
-                                ))}
+                              <div className="mt-2.5 pt-2.5 border-t border-gray-100/10 space-y-2">
+                                {msg.attachments.map((att, idx) => {
+                                  // Determine file type
+                                  const isImage = att.type?.includes('image') || 
+                                                  att.url?.startsWith('data:image') ||
+                                                  /\.(jpg|jpeg|png|gif|webp)/i.test(att.name || att.url || '');
+                                                  
+                                  const isPdf = att.type?.includes('pdf') || 
+                                                /\.(pdf)/i.test(att.name || att.url || '');
+
+                                  if (isImage) {
+                                    return (
+                                      <div key={idx} className="relative group overflow-hidden rounded-xl border border-[#d4af37]/25 max-w-full cursor-pointer bg-black/5 mt-2">
+                                        <img 
+                                          src={att.url} 
+                                          alt={att.name || "صورة مرفقة"} 
+                                          className="max-h-56 w-full object-contain rounded-xl transition-transform duration-300 group-hover:scale-[1.02]"
+                                          referrerPolicy="no-referrer"
+                                        />
+                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-3">
+                                          <button
+                                            type="button"
+                                            onClick={() => setActivePreviewImage(att.url)}
+                                            className="p-2 bg-[#171714] text-[#d4af37] border border-[#d4af37]/35 rounded-xl hover:bg-[#20201c] transition-colors"
+                                            title="تكبير الصورة"
+                                          >
+                                            <Eye className="w-4 h-4" />
+                                          </button>
+                                          <a
+                                            href={att.url}
+                                            download={att.name || "royal_image.png"}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="p-2 bg-[#171714] text-[#d4af37] border border-[#d4af37]/35 rounded-xl hover:bg-[#20201c] transition-colors"
+                                            title="تحميل الصورة"
+                                          >
+                                            <Download className="w-4 h-4" />
+                                          </a>
+                                        </div>
+                                      </div>
+                                    );
+                                  }
+
+                                  if (isPdf) {
+                                    return (
+                                      <div key={idx} className={`flex items-center justify-between p-3 rounded-xl border transition-all mt-2 ${
+                                        isMe 
+                                          ? 'bg-neutral-900/80 border-[#d4af37]/30 text-white hover:bg-neutral-900' 
+                                          : 'bg-[#faf9f6] border-gray-200 text-gray-800 hover:border-[#d4af37]/30'
+                                      }`}>
+                                        <div className="flex items-center gap-2.5">
+                                          <div className="p-2.5 bg-red-600/10 text-red-500 rounded-lg">
+                                            <FileText className="w-6 h-6 shrink-0" />
+                                          </div>
+                                          <div className="text-right">
+                                            <p className="text-xs font-bold line-clamp-1 max-w-[150px] sm:max-w-[200px]">{att.name || 'مخطط PDF'}</p>
+                                            <span className="text-[9px] text-gray-400 font-bold block mt-0.5">مستند PDF جاهز</span>
+                                          </div>
+                                        </div>
+                                        <a
+                                          href={att.url}
+                                          download={att.name || "royal_document.pdf"}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="p-2 bg-[#d4af37]/15 text-[#d4af37] hover:bg-[#d4af37]/30 rounded-lg transition-colors"
+                                          title="تحميل الملف"
+                                        >
+                                          <Download className="w-3.5 h-3.5" />
+                                        </a>
+                                      </div>
+                                    );
+                                  }
+
+                                  // Generic fallback for other files
+                                  return (
+                                    <a
+                                      key={idx}
+                                      href={att.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className={`inline-flex items-center justify-between p-2.5 rounded-xl text-xs font-bold transition-all border mt-2 ${
+                                        isMe 
+                                          ? 'bg-white/10 hover:bg-white/25 text-white border-white/10' 
+                                          : 'bg-gray-50 border border-gray-100 text-gray-700 hover:border-[#d4af37]'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <Paperclip className="w-3.5 h-3.5 text-[#d4af37]" />
+                                        <span className="line-clamp-1 max-w-[120px]">{att.name || `ملف مرفق ${idx + 1}`}</span>
+                                      </div>
+                                      <ExternalLink className="w-3 h-3 text-[#d4af37] mr-2" />
+                                    </a>
+                                  );
+                                })}
                               </div>
                             )}
 
-                          </div>
+                            {/* Time & Read Status checkmarks integrated beautifully inside bubble bottom */}
+                            <div className={`flex items-center justify-end gap-1.5 mt-2 text-[9px] font-bold ${
+                              isMe ? 'text-gray-300' : 'text-gray-400'
+                            }`}>
+                              <span>
+                                {new Date(msg.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              {isMe && (
+                                <span className="inline-flex items-center">
+                                  {msg.read ? (
+                                    <CheckCheck className="w-3.5 h-3.5 text-[#d4af37]" title="قُرأت" />
+                                  ) : (
+                                    <CheckCheck className="w-3.5 h-3.5 text-gray-500" title="وُزعت" />
+                                  )}
+                                </span>
+                              )}
+                            </div>
 
-                          {/* Time label */}
-                          <span className="text-[9px] text-gray-400 mt-1 mx-1.5 font-semibold">
-                            {new Date(msg.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
+                          </div>
+                          
                         </div>
                       );
                     })
@@ -1435,21 +1402,11 @@ export const ProjectTickets: React.FC = () => {
                 <h3 className="font-extrabold text-xl text-gray-900">مرحباً بك في نظام التذاكر والدردشة الفنية</h3>
                 <p className="mt-3 text-sm text-gray-400 max-w-md mx-auto leading-relaxed font-semibold">
                   {currentRole === 'client' 
-                    ? 'يرجى فتح تذكرة فنية جديدة لمشروعك، أو إدخال رقم تذكرة سابقة في الشريط الجانبي الأيمن للانضمام لغرفة المحادثة الخاصة مع مهندس التصميم.'
+                    ? 'يتم إنشاء تذكرة وغرفة محادثة تلقائياً فور تقديم طلب تصميم أو نموذج غرفة النوم. يرجى إدخال رقم تتبع طلبك (RG-XXXXXX) أو رقم هاتفك في القائمة الجانبية للانضمام المباشر ومتابعة المهندس.'
                     : currentRole === 'engineer'
                     ? 'يرجى اختيار أحد التذاكر المسندة إليك من القائمة لمباشرة المحادثة مع العميل أو مراجعة المخططات الهندسية الخاصة به.'
                     : 'بصفتك مديراً، يرجى اختيار تذكرة من شريط التحكم لمشاهدة تفاصيل الدردشة وإدارتها وتعيين المهندسين.'}
                 </p>
-
-                {currentRole === 'client' && (
-                  <button
-                    onClick={() => setIsOpeningNewTicket(true)}
-                    className="mt-6 px-6 py-3 bg-[#d4af37] text-[#171714] rounded-xl text-sm font-black hover:bg-[#b8952b] transition-all shadow-lg shadow-[#d4af37]/10 flex items-center gap-2"
-                  >
-                    <Plus className="w-4 h-4" />
-                    ابدأ بفتح تذكرة جديدة الآن
-                  </button>
-                )}
               </div>
             )}
 
@@ -1458,6 +1415,65 @@ export const ProjectTickets: React.FC = () => {
         </div>
 
       </div>
+
+      {/* WhatsApp style Fullscreen Image Lightbox Modal */}
+      {activePreviewImage && (
+        <div 
+          className="fixed inset-0 bg-black/95 z-50 flex flex-col items-center justify-center p-4"
+          onClick={() => setActivePreviewImage(null)}
+        >
+          <div className="absolute top-4 left-4 flex items-center gap-3">
+            <a
+              href={activePreviewImage}
+              download="royal_design.png"
+              target="_blank"
+              rel="noreferrer"
+              className="p-3 bg-neutral-900 text-[#d4af37] border border-[#d4af37]/30 rounded-xl hover:bg-neutral-800 transition-colors flex items-center gap-2 text-xs font-bold"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Download className="w-4 h-4" />
+              <span>تحميل الصورة</span>
+            </a>
+            <button 
+              onClick={() => setActivePreviewImage(null)}
+              className="p-3 bg-neutral-900 text-white rounded-xl hover:bg-neutral-800 transition-colors text-xs font-bold"
+            >
+              إغلاق ×
+            </button>
+          </div>
+          
+          <img 
+            src={activePreviewImage} 
+            alt="Royal Group Design Zoomed" 
+            className="max-h-[85vh] max-w-full object-contain rounded-2xl border border-[#d4af37]/45 shadow-2xl"
+            referrerPolicy="no-referrer"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+
+      {/* In-app Instant WhatsApp Banner Notification Toast */}
+      {activeToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#171714] border-2 border-[#d4af37] text-white p-4 rounded-2xl shadow-2xl max-w-sm w-full flex items-start gap-3 text-right">
+          <div className="p-2.5 bg-[#d4af37]/15 text-[#d4af37] rounded-xl shrink-0 mt-0.5">
+            <Volume2 className="w-5 h-5" />
+          </div>
+          <div className="flex-grow">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-[#d4af37] font-black tracking-widest uppercase">تنبيه فوري</span>
+              <button 
+                onClick={() => setActiveToast(null)}
+                className="text-gray-400 hover:text-white font-extrabold text-xs"
+              >
+                ×
+              </button>
+            </div>
+            <h4 className="text-xs font-bold text-white mt-1">{activeToast.title}</h4>
+            <p className="text-[11px] text-gray-300 mt-1 line-clamp-2 leading-relaxed">{activeToast.message}</p>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

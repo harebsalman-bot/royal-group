@@ -55,6 +55,10 @@ export interface DesignRequest {
   rejectionNotes?: string;
   adminNotes?: string;
   viewed?: boolean;
+  ticketId?: string;
+  assignedEngineerId?: string;
+  assignedEngineerName?: string;
+  assignedAt?: number;
 }
 
 export interface CompanySettings {
@@ -106,6 +110,10 @@ export interface BedroomSubmission {
   rejectionNotes?: string;
   adminNotes?: string;
   viewed?: boolean;
+  ticketId?: string;
+  assignedEngineerId?: string;
+  assignedEngineerName?: string;
+  assignedAt?: number;
 }
 
 // ==========================================
@@ -118,9 +126,12 @@ export interface Engineer {
   email: string;
   phone: string;
   specialty?: string;
+  specialization?: string; // Standardized field
   active: boolean;
   role: 'engineer';
   createdAt: number;
+  currentTickets?: number;
+  currentProjects?: number;
 }
 
 export type TicketStatus = 'open' | 'in_progress' | 'under_review' | 'closed';
@@ -131,16 +142,19 @@ export interface Ticket {
   clientPhone: string;
   clientEmail?: string;
   title: string;
+  subject?: string; // Compatible with legacy tickets which use subject instead of title
   description: string;
   status: TicketStatus;
   createdAt: number;
   updatedAt: number;
   assignedEngineerId?: string;
   assignedEngineerName?: string;
+  assignedAt?: number;
   sourceId?: string;
   sourceType?: 'design_request' | 'bedroom_submission' | 'direct';
   requestId?: string;
   trackingId?: string;
+  relatedRequestNumber?: string; // Compatible with legacy tickets linked to requests
   attachments?: string[];
 }
 
@@ -153,6 +167,7 @@ export interface Message {
   content: string;
   attachments?: { name: string; url: string; type: string }[];
   createdAt: number;
+  read?: boolean;
 }
 
 export interface TicketNotification {
