@@ -2,121 +2,237 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // =========================================================================
+    // HELPER FUNCTIONS & AUTHENTICATION CONTEXT
+    // =========================================================================
+
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // Verify if the logged-in user is the official Royal Group Administrator
+    // 1. Admin Role: Verified via admin email address
     function isAdmin() {
-      return request.auth != null && request.auth.token.email == 'harebsalman@gmail.com';
+      return isSignedIn() && (
+        request.auth.token.email == 'harebsalman@gmail.com' ||
+        request.auth.token.email == 'admin@royalgroup.com'
+      );
     }
 
-    // Helper function to validate project schema
-    function isValidProject(data) {
-      return data.keys().hasAll(['id', 'title', 'description', 'area', 'city', 'coverImage', 'category', 'featured', 'createdAt'])
-        && data.id is string
-        && data.title is string
-        && data.description is string
-        && data.area is string
-        && data.city is string
-        && data.coverImage is string
-        && data.category is string
-        && data.featured is bool
-        && data.createdAt is int
-        && (!('beforeImage' in data) || data.beforeImage is string)
-        && (!('afterImage' in data) || data.afterImage is string)
-        && (!('images' in data) || data.images is list)
-        && (!('orderIndex' in data) || data.orderIndex is int);
+    function getUserEmail() {
+      return isSignedIn() && request.auth.token.email != null ? request.auth.token.email : '';
     }
 
-    // PROJECTS Collection
+    function getUserPhone() {
+      return isSignedIn() && request.auth.token.phone_number != null ? request.auth.token.phone_number : '';
+    }
+
+    function getUserId() {
+      return isSignedIn() ? request.auth.uid : '';
+    }
+
+    // 2. Engineer Authorization Check
+    function isAssignedEngineer(ticketData) {
+      return isSignedIn() && (
+        (ticketData.assignedEngineerId != null && ticketData.assignedEngineerId == getUserId()) ||
+        (ticketData.assignedEngineerEmail != null && ticketData.assignedEngineerEmail == getUserEmail())
+      );
+    }
+
+    // 3. Client Ownership Authorization Check
+    function isTicketClientOwner(ticketData) {
+      return isSignedIn() && (
+        (ticketData.clientId != null && ticketData.clientId == getUserId()) ||
+        (ticketData.clientPhone != null && getUserPhone() != '' && ticketData.clientPhone == getUserPhone())
+      );
+    }
+
+    // 4. Combined Ticket Access Validator
+    function canAccessTicket(ticketData) {
+      return isAdmin() || isAssignedEngineer(ticketData) || isTicketClientOwner(ticketData);
+    }
+
+    // Cross-collection ticket lookup for message authorization
+    function getTicketData(ticketId) {
+      return get(/databases/$(database)/documents/tickets/$(ticketId)).data;
+    }
+
+    function ticketExists(ticketId) {
+      return exists(/databases/$(database)/documents/tickets/$(ticketId));
+    }
+
+
+    // =========================================================================
+    // PUBLIC SHOWCASE & CATALOG COLLECTIONS (READ: PUBLIC, WRITE: ADMIN ONLY)
+    // Justified: Public website catalog viewing
+    // =========================================================================
+
     match /projects/{projectId} {
       allow read: if true;
-      allow create, update: if isAdmin() && isValidProject(request.resource.data);
-      allow delete: if isAdmin();
+      allow write: if isAdmin();
     }
 
-    // CATEGORIES Collection
     match /categories/{categoryId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // PROJECT IMAGES Collection
     match /projectImages/{imageId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // COLOR VARIANTS Collection
     match /colorVariants/{variantId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // COMPANY SETTINGS Collection
-    match /companySettings/{settingId} {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    // SOCIAL LINKS Collection
-    match /socialLinks/{linkId} {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    // BEDROOM OPTIONS Collection
     match /bedroomOptions/{optionId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // DESIGN REQUESTS Collection
-    match /designRequests/{requestId} {
-      allow create: if true;
-      allow get: if true;
-      allow list: if isAdmin() || (request.query.limit <= 20);
-      allow update, delete: if isAdmin();
-    }
-
-    // BEDROOM SUBMISSIONS Collection
-    match /bedroomSubmissions/{submissionId} {
-      allow create: if true;
-      allow get: if true;
-      allow list: if isAdmin() || (request.query.limit <= 20);
-      allow update, delete: if isAdmin();
-    }
-
-    // ENGINEERS Collection
-    match /engineers/{engineerId} {
+    match /companySettings/{settingId} {
       allow read: if true;
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentTickets']));
+      allow write: if isAdmin();
     }
 
-    // TICKETS Collection
+    match /socialLinks/{linkId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+
+    // =========================================================================
+    // CLIENT REQUEST COLLECTIONS
+    // =========================================================================
+
+    match /designRequests/{requestId} {
+      allow create: if true; // Public submission form
+      allow get: if isAdmin() || (isSignedIn() && resource.data.phone == getUserPhone());
+      allow list: if isAdmin() || (isSignedIn() && resource.data.phone == getUserPhone());
+      allow update, delete: if isAdmin();
+    }
+
+    match /bedroomSubmissions/{submissionId} {
+      allow create: if true; // Public submission form
+      allow get: if isAdmin() || (isSignedIn() && resource.data.clientPhone == getUserPhone());
+      allow list: if isAdmin() || (isSignedIn() && resource.data.clientPhone == getUserPhone());
+      allow update, delete: if isAdmin();
+    }
+
+
+    // =========================================================================
+    // ENGINEERS COLLECTION
+    // =========================================================================
+
+    match /engineers/{engineerId} {
+      // Admin reads/manages all engineers.
+      // Individual engineers read only their own profile document.
+      // Clients are STRICTLY BLOCKED from reading engineer directory documents.
+      allow read: if isAdmin() || (isSignedIn() && (resource.data.email == getUserEmail() || engineerId == getUserId()));
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isSignedIn() && 
+        (resource.data.email == getUserEmail() || engineerId == getUserId()) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['email', 'role'])
+      );
+    }
+
+
+    // =========================================================================
+    // TICKETS COLLECTION
+    // =========================================================================
+
     match /tickets/{ticketId} {
-      allow create: if true;
-      allow read: if true; // Clients access single tickets by ID; engineers access assigned ones
-      allow update: if true;
+      // Read: Admin reads all. Engineer reads assigned tickets only. Client reads their own tickets only.
+      allow read: if canAccessTicket(resource.data);
+
+      // Create: Admin or authenticated client creating their own ticket
+      allow create: if isAdmin() || (
+        isSignedIn() && 
+        (request.resource.data.clientPhone == getUserPhone() || request.resource.data.clientId == getUserId())
+      );
+
+      // Update:
+      // - Admin: Full update privileges (status, engineer assignment, content).
+      // - Engineer: CANNOT change status (close/reopen) or reassign engineer.
+      // - Client: CANNOT alter status, assign engineers, or modify core ticket fields.
+      allow update: if isAdmin() || (
+        isAssignedEngineer(resource.data) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'assignedEngineerId', 'assignedEngineerEmail', 'assignedEngineerName'])
+      );
+
+      // Delete: Admin only
       allow delete: if isAdmin();
     }
 
-    // MESSAGES Collection
+
+    // =========================================================================
+    // MESSAGES COLLECTION (CHAT ROOM SECURITY)
+    // =========================================================================
+
     match /messages/{messageId} {
-      allow read, write: if true;
+      // Read: Allowed ONLY if user is authorized to view the parent ticket.
+      allow read: if isAdmin() || (
+        isSignedIn() && 
+        ticketExists(resource.data.ticketId) && 
+        canAccessTicket(getTicketData(resource.data.ticketId))
+      );
+
+      // Create: Allowed ONLY if user belongs to the ticket AND sets their own senderId.
+      allow create: if isAdmin() || (
+        isSignedIn() && 
+        ticketExists(request.resource.data.ticketId) && 
+        canAccessTicket(getTicketData(request.resource.data.ticketId)) &&
+        request.resource.data.senderId == getUserId()
+      );
+
+      // Update: Admin, or participants marking read status
+      allow update: if isAdmin() || (
+        isSignedIn() && 
+        ticketExists(resource.data.ticketId) && 
+        canAccessTicket(getTicketData(resource.data.ticketId)) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])
+      );
+
+      allow delete: if isAdmin();
     }
 
-    // NOTIFICATIONS Collection
+
+    // =========================================================================
+    // NOTIFICATIONS COLLECTION
+    // =========================================================================
+
     match /notifications/{notifId} {
-      allow read, write: if true;
+      allow read: if isAdmin() || (
+        isSignedIn() && (
+          resource.data.recipientId == getUserId() ||
+          resource.data.recipientEmail == getUserEmail() ||
+          resource.data.recipientPhone == getUserPhone()
+        )
+      );
+
+      allow create: if isSignedIn();
+
+      allow update: if isAdmin() || (
+        isSignedIn() && (
+          resource.data.recipientId == getUserId() ||
+          resource.data.recipientEmail == getUserEmail() ||
+          resource.data.recipientPhone == getUserPhone()
+        ) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])
+      );
+
+      allow delete: if isAdmin();
     }
 
-    // COUNTERS Collection
+
+    // =========================================================================
+    // COUNTERS COLLECTION
+    // =========================================================================
+
     match /counters/{counterId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
   }
 }
