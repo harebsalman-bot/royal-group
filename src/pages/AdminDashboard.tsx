@@ -83,6 +83,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [projAfterFile, setProjAfterFile] = useState<File | null>(null);
   const [projAfterUrl, setProjAfterUrl] = useState('');
 
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadingBefore, setUploadingBefore] = useState(false);
+  const [uploadingAfter, setUploadingAfter] = useState(false);
+  const [uploadingGallery, setUploadingGallery] = useState(false);
+
   // Color Variant form states
   const [colorName, setColorName] = useState('');
   const [colorType, setColorType] = useState<'wood' | 'marble' | 'wall' | 'flooring'>('wood');
@@ -366,21 +371,68 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    try {
+      setUploadingCover(true);
+      const base64 = await uploadFile(file, 'projects');
+      setProjCoverUrl(base64);
+      showFeedback('تمت معالجة وحفظ صورة الغلاف بنجاح.');
+    } catch (err) {
+      console.error(err);
+      showFeedback('فشل معالجة صورة الغلاف.', 'error');
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
+  const handleBeforeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    try {
+      setUploadingBefore(true);
+      const base64 = await uploadFile(file, 'before-after');
+      setProjBeforeUrl(base64);
+      showFeedback('تمت معالجة وحفظ صورة قبل التنفيذ بنجاح.');
+    } catch (err) {
+      console.error(err);
+      showFeedback('فشل معالجة صورة قبل التنفيذ.', 'error');
+    } finally {
+      setUploadingBefore(false);
+    }
+  };
+
+  const handleAfterUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    try {
+      setUploadingAfter(true);
+      const base64 = await uploadFile(file, 'before-after');
+      setProjAfterUrl(base64);
+      showFeedback('تمت معالجة وحفظ صورة بعد التنفيذ بنجاح.');
+    } catch (err) {
+      console.error(err);
+      showFeedback('فشل معالجة صورة بعد التنفيذ.', 'error');
+    } finally {
+      setUploadingAfter(false);
+    }
+  };
+
   const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
+    const files = Array.from(e.target.files);
     try {
-      setGlobalLoading(true);
-      const urls: string[] = [];
-      for (const file of Array.from(e.target.files)) {
-        const url = await uploadFile(file, 'projects');
-        urls.push(url);
-      }
-      setProjGalleryUrls(prev => [...prev, ...urls]);
-      showFeedback('تم رفع صور المعرض بنجاح!');
+      setUploadingGallery(true);
+      const promises = files.map(file => uploadFile(file, 'projects'));
+      const base64Array = await Promise.all(promises);
+      setProjGalleryUrls(prev => [...prev, ...base64Array]);
+      showFeedback(`تمت معالجة وإضافة ${files.length} صورة إلى المعرض بنجاح.`);
     } catch (err) {
-      showFeedback('حدث خطأ أثناء رفع صور المعرض.', 'error');
+      console.error(err);
+      showFeedback('فشل معالجة بعض أو كل صور المعرض.', 'error');
     } finally {
-      setGlobalLoading(false);
+      setUploadingGallery(false);
     }
   };
 
@@ -1773,115 +1825,166 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     />
                   </div>
 
-                  {/* Primary Cover URL and Preview */}
+                  {/* Primary Cover Upload and Preview */}
                   <div className="space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-150">
-                    <label className="font-extrabold text-xs text-gray-700 block">رابط الصورة الرئيسية للمشروع (Cover Image URL) *</label>
-                    {projCoverUrl && (
-                      <div className="w-full h-40 rounded-xl overflow-hidden bg-black/5 relative border border-gray-200 shadow-inner mb-3">
+                    <label className="font-extrabold text-xs text-gray-700 block">الصورة الرئيسية للمشروع *</label>
+                    
+                    {projCoverUrl ? (
+                      <div className="w-full h-48 rounded-xl overflow-hidden bg-black/5 relative border border-gray-200 shadow-inner">
                         <img
                           src={projCoverUrl}
                           className="w-full h-full object-cover"
                           alt="Cover Preview"
+                          referrerPolicy="no-referrer"
                         />
                         <button
                           type="button"
                           onClick={() => setProjCoverUrl('')}
-                          className="absolute top-2 left-2 px-2 py-1 bg-red-600/95 text-white rounded-lg text-[10px] font-bold"
+                          className="absolute top-2 left-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors shadow-md flex items-center gap-1"
                         >
-                          إزالة الصورة
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف واستبدال</span>
                         </button>
                       </div>
+                    ) : (
+                      <div className="w-full">
+                        <label className={`w-full h-32 rounded-xl border-2 border-dashed border-gray-300 hover:border-[#d4af37] cursor-pointer flex flex-col items-center justify-center p-4 bg-white hover:bg-gray-50/50 transition-all ${uploadingCover ? 'opacity-50 pointer-events-none' : ''}`}>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleCoverUpload}
+                            className="hidden"
+                          />
+                          {uploadingCover ? (
+                            <div className="flex flex-col items-center gap-2 text-gray-500">
+                              <Loader2 className="w-8 h-8 animate-spin text-[#d4af37]" />
+                              <span className="text-xs font-bold">جاري ضغط ومعالجة الصورة...</span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center gap-2 text-gray-500">
+                              <ImageIcon className="w-8 h-8 text-gray-400" />
+                              <span className="text-xs font-bold text-gray-600">اضغط لاختيار صورة الغلاف الرئيسية</span>
+                              <span className="text-[10px] text-gray-400">تدعم JPEG، PNG، WEBP (يتم تحويلها لـ Base64 مضغوط)</span>
+                            </div>
+                          )}
+                        </label>
+                      </div>
                     )}
-                    <div className="flex flex-col gap-2">
-                      <input
-                        type="text"
-                        required
-                        value={projCoverUrl}
-                        onChange={(e) => setProjCoverUrl(e.target.value)}
-                        placeholder="ضع رابط صورة الغلاف المباشر هنا (مثال: https://example.com/cover.jpg)"
-                        className="w-full p-3 bg-white border border-gray-200 rounded-xl text-xs text-left font-mono outline-none focus:border-[#d4af37]"
-                      />
-                      <p className="text-[10px] text-gray-400">ملاحظة: يدعم روابط الصور من أي موقع أو خادم مباشر.</p>
-                    </div>
                   </div>
 
-                  {/* Before and After Comparers (URLs only) */}
+                  {/* Before and After Comparers (Local selection) */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    {/* Before Image URL */}
+                    {/* Before Image */}
                     <div className="space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-150">
-                      <label className="font-extrabold text-xs text-red-700 block font-sans">رابط صورة قبل العمل والتنفيذ (Before Image URL) - اختياري</label>
-                      {projBeforeUrl && (
-                        <div className="w-full h-36 rounded-xl overflow-hidden bg-black/5 relative border border-gray-200 shadow-inner mb-3">
+                      <label className="font-extrabold text-xs text-red-700 block font-sans">صورة قبل العمل والتنفيذ - اختياري</label>
+                      
+                      {projBeforeUrl ? (
+                        <div className="w-full h-36 rounded-xl overflow-hidden bg-black/5 relative border border-gray-200 shadow-inner">
                           <img
                             src={projBeforeUrl}
                             className="w-full h-full object-cover"
                             alt="Before Preview"
+                            referrerPolicy="no-referrer"
                           />
                           <button
                             type="button"
                             onClick={() => setProjBeforeUrl('')}
-                            className="absolute top-2 left-2 px-2 py-1 bg-red-600/95 text-white rounded-lg text-[10px] font-bold"
+                            className="absolute top-2 left-2 px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-bold transition-colors flex items-center gap-1 shadow-sm"
                           >
-                            إزالة
+                            <Trash2 className="w-3 h-3" />
+                            <span>حذف</span>
                           </button>
                         </div>
+                      ) : (
+                        <div className="w-full">
+                          <label className={`w-full h-28 rounded-xl border-2 border-dashed border-gray-300 hover:border-red-500 cursor-pointer flex flex-col items-center justify-center p-3 bg-white hover:bg-gray-50/50 transition-all ${uploadingBefore ? 'opacity-50 pointer-events-none' : ''}`}>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleBeforeUpload}
+                              className="hidden"
+                            />
+                            {uploadingBefore ? (
+                              <div className="flex flex-col items-center gap-1.5 text-gray-500">
+                                <Loader2 className="w-6 h-6 animate-spin text-red-500" />
+                                <span className="text-[10px] font-bold">جاري المعالجة...</span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center gap-1.5 text-gray-500 text-center">
+                                <ImageIcon className="w-6 h-6 text-gray-400" />
+                                <span className="text-[11px] font-bold text-gray-600">اختر صورة حالة الموقع (قبل العمل)</span>
+                                <span className="text-[9px] text-gray-400">تظهر في مقارنة قبل/بعد</span>
+                              </div>
+                            )}
+                          </label>
+                        </div>
                       )}
-                      <div className="flex flex-col gap-2">
-                        <input
-                          type="text"
-                          value={projBeforeUrl}
-                          onChange={(e) => setProjBeforeUrl(e.target.value)}
-                          placeholder="رابط صورة قبل التنفيذ (اختياري)..."
-                          className="w-full p-2.5 bg-white border border-gray-200 rounded-xl text-[11px] text-left font-mono outline-none focus:border-red-500"
-                        />
-                      </div>
                     </div>
 
-                    {/* After Image URL */}
+                    {/* After Image */}
                     <div className="space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-150">
-                      <label className="font-extrabold text-xs text-[#d4af37] block font-sans">رابط صورة بعد العمل والتنفيذ (After Image URL) - اختياري</label>
-                      {projAfterUrl && (
-                        <div className="w-full h-36 rounded-xl overflow-hidden bg-black/5 relative border border-gray-200 shadow-inner mb-3">
+                      <label className="font-extrabold text-xs text-[#d4af37] block font-sans">صورة بعد العمل والتنفيذ - اختياري</label>
+                      
+                      {projAfterUrl ? (
+                        <div className="w-full h-36 rounded-xl overflow-hidden bg-black/5 relative border border-gray-200 shadow-inner">
                           <img
                             src={projAfterUrl}
                             className="w-full h-full object-cover"
                             alt="After Preview"
+                            referrerPolicy="no-referrer"
                           />
                           <button
                             type="button"
                             onClick={() => setProjAfterUrl('')}
-                            className="absolute top-2 left-2 px-2 py-1 bg-red-600/95 text-white rounded-lg text-[10px] font-bold"
+                            className="absolute top-2 left-2 px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-bold transition-colors flex items-center gap-1 shadow-sm"
                           >
-                            إزالة
+                            <Trash2 className="w-3 h-3" />
+                            <span>حذف</span>
                           </button>
                         </div>
+                      ) : (
+                        <div className="w-full">
+                          <label className={`w-full h-28 rounded-xl border-2 border-dashed border-gray-300 hover:border-[#d4af37] cursor-pointer flex flex-col items-center justify-center p-3 bg-white hover:bg-gray-50/50 transition-all ${uploadingAfter ? 'opacity-50 pointer-events-none' : ''}`}>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleAfterUpload}
+                              className="hidden"
+                            />
+                            {uploadingAfter ? (
+                              <div className="flex flex-col items-center gap-1.5 text-gray-500">
+                                <Loader2 className="w-6 h-6 animate-spin text-[#d4af37]" />
+                                <span className="text-[10px] font-bold">جاري المعالجة...</span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center gap-1.5 text-gray-500 text-center">
+                                <ImageIcon className="w-6 h-6 text-gray-400" />
+                                <span className="text-[11px] font-bold text-gray-600">اختر صورة النتيجة النهائية (بعد العمل)</span>
+                                <span className="text-[9px] text-gray-400">تظهر في مقارنة قبل/بعد</span>
+                              </div>
+                            )}
+                          </label>
+                        </div>
                       )}
-                      <div className="flex flex-col gap-2">
-                        <input
-                          type="text"
-                          value={projAfterUrl}
-                          onChange={(e) => setProjAfterUrl(e.target.value)}
-                          placeholder="رابط صورة بعد التنفيذ (اختياري)..."
-                          className="w-full p-2.5 bg-white border border-gray-200 rounded-xl text-[11px] text-left font-mono outline-none focus:border-[#d4af37]"
-                        />
-                      </div>
                     </div>
                   </div>
 
-                  {/* Multi Gallery URLs */}
+                  {/* Multi Gallery Local Upload */}
                   <div className="space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-150">
-                    <label className="font-extrabold text-xs text-gray-700 block">معرض صور إضافية للمشروع (Gallery Image URLs) *</label>
+                    <label className="font-extrabold text-xs text-gray-700 block">معرض صور إضافية للمشروع (Gallery Images) *</label>
+                    
                     {projGalleryUrls.length > 0 && (
-                      <div className="flex flex-wrap gap-2.5 p-3 bg-white border border-gray-200 rounded-xl mb-3">
+                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 p-3 bg-white border border-gray-200 rounded-xl mb-3">
                         {projGalleryUrls.map((url, i) => (
-                          <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-150 group shadow-sm bg-gray-50">
-                            <img src={url} className="w-full h-full object-cover" alt="Gallery preview" />
+                          <div key={i} className="relative aspect-square rounded-xl overflow-hidden border border-gray-150 group shadow-sm bg-gray-50">
+                            <img src={url} className="w-full h-full object-cover" alt="Gallery preview" referrerPolicy="no-referrer" />
                             <button
                               type="button"
                               onClick={() => setProjGalleryUrls(prev => prev.filter((_, idx) => idx !== i))}
-                              className="absolute inset-0 bg-red-600/90 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center font-bold text-[10px] transition-all"
+                              className="absolute inset-0 bg-red-600/90 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center font-bold text-xs transition-all duration-200 flex-col gap-1"
                             >
-                              إزالة
+                              <Trash2 className="w-4 h-4" />
+                              <span>إزالة</span>
                             </button>
                           </div>
                         ))}
@@ -1889,57 +1992,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     )}
 
                     <div className="space-y-3">
-                      {/* Paste area for multiple URLs */}
-                      <div className="bg-white p-3 rounded-xl border border-gray-200 space-y-2">
-                        <label className="font-bold text-[10px] text-gray-500 block">إضافة روابط متعددة دفعة واحدة (رابط في كل سطر أو مفصولة بفواصل)</label>
-                        <textarea
-                          id="bulkGalleryUrls"
-                          rows={2}
-                          placeholder="انسخ روابط الصور هنا...&#10;https://example.com/img1.jpg&#10;https://example.com/img2.jpg"
-                          className="w-full p-2 text-[11px] font-mono text-left bg-gray-50 border rounded-lg resize-none outline-none focus:bg-white focus:border-[#d4af37]"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const txtArea = document.getElementById('bulkGalleryUrls') as HTMLTextAreaElement;
-                            if (txtArea && txtArea.value.trim()) {
-                              const lines = txtArea.value.split(/[\n,]+/).map(line => line.trim()).filter(line => line.length > 0);
-                              if (lines.length > 0) {
-                                setProjGalleryUrls(p => [...p, ...lines]);
-                                txtArea.value = '';
-                                showFeedback(`تم إضافة ${lines.length} رابط إلى المعرض.`);
-                              }
-                            }
-                          }}
-                          className="w-full py-1.5 bg-[#171714] text-[#d4af37] rounded-lg font-bold text-[10px] hover:bg-black transition-all"
-                        >
-                          إضافة هذه الروابط للمعرض
-                        </button>
+                      <div className="w-full">
+                        <label className={`w-full h-28 rounded-xl border-2 border-dashed border-gray-300 hover:border-[#d4af37] cursor-pointer flex flex-col items-center justify-center p-4 bg-white hover:bg-gray-50/50 transition-all ${uploadingGallery ? 'opacity-50 pointer-events-none' : ''}`}>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={handleGalleryUpload}
+                            className="hidden"
+                          />
+                          {uploadingGallery ? (
+                            <div className="flex flex-col items-center gap-2 text-gray-500">
+                              <Loader2 className="w-8 h-8 animate-spin text-[#d4af37]" />
+                              <span className="text-xs font-bold">جاري ضغط ومعالجة صور المعرض...</span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center gap-2 text-gray-500 text-center">
+                              <div className="flex items-center gap-1 text-gray-400">
+                                <ImageIcon className="w-6 h-6" />
+                                <Plus className="w-4 h-4 -mr-2 mt-2 bg-white rounded-full border shadow-sm p-0.5" />
+                              </div>
+                              <span className="text-xs font-bold text-gray-600">اضغط لاختيار صور إضافية للمعرض (متعدد)</span>
+                              <span className="text-[10px] text-gray-400">يمكنك تحديد عدة صور دفعة واحدة وتخزينها كـ Base64 مدمج</span>
+                            </div>
+                          )}
+                        </label>
                       </div>
-
-                      {/* Direct add link helper */}
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          id="addGalInputModal"
-                          placeholder="أو أضف رابط صورة مباشر واحد..."
-                          className="flex-1 p-2.5 bg-white border border-gray-200 rounded-xl text-xs outline-none font-mono text-left"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const inp = document.getElementById('addGalInputModal') as HTMLInputElement;
-                            if (inp && inp.value.trim()) {
-                              setProjGalleryUrls(p => [...p, inp.value.trim()]);
-                              inp.value = '';
-                            }
-                          }}
-                          className="px-4 py-2 bg-[#171714] text-[#d4af37] rounded-xl font-bold text-xs"
-                        >
-                          إضافة
-                        </button>
-                      </div>
-                      <p className="text-[10px] text-gray-400">سيتم حفظ معرض الصور نهائياً عند حفظ المشروع بالكامل.</p>
+                      <p className="text-[10px] text-gray-400 text-center">سيتم حفظ معرض الصور نهائياً عند حفظ المشروع بالكامل.</p>
                     </div>
                   </div>
 

@@ -189,6 +189,58 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
+// Helper to compress and convert image File to Base64 data url to fit within Firestore 1MB document limit
+const compressAndConvertToBase64 = (file: File, maxWidth: number = 1000, maxHeight: number = 1000, quality: number = 0.75): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressedDataUrl);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
+
 export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
@@ -454,12 +506,12 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   /**
-   * Universal file uploader: Converts to Base64 data URL directly to save into Firestore, preventing Firebase Storage failures.
+   * Universal file uploader: Converts to compressed Base64 data URL directly to save into Firestore, preventing Firebase Storage failures.
    */
-  const uploadFile = async (file: File, folder: 'projects' | 'before-after' | 'color-lab'): Promise<string> => {
+  const uploadFile = async (file: File, folder: 'projects' | 'before-after' | 'color-lab' | 'bedroom-options'): Promise<string> => {
     try {
-      // Direct Base64 conversion - works perfectly on Spark plan with no Firebase Storage!
-      return await fileToBase64(file);
+      // Direct compressed Base64 conversion - works perfectly on Spark plan with no Firebase Storage!
+      return await compressAndConvertToBase64(file, 1000, 1000, 0.75);
     } catch (error) {
       console.warn("Base64 conversion failed. Falling back to high-quality Unsplash interior/architecture design:", error);
       
