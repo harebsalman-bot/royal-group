@@ -307,10 +307,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         city: projCity,
         category: projCategory,
         featured: projFeatured,
-        coverImage: coverUrl,
-        images: projGalleryUrls.length > 0 ? projGalleryUrls : [coverUrl],
-        beforeImage: beforeUrl || undefined,
-        afterImage: afterUrl || undefined
+        coverImage: coverUrl || "",
+        images: projGalleryUrls.length > 0 ? projGalleryUrls : [],
+        beforeImage: beforeUrl || "",
+        afterImage: afterUrl || ""
       };
 
       if (editingProject) {

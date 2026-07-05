@@ -527,15 +527,48 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   /**
+   * Sanitizes a project object to ensure no undefined values are sent to Firestore.
+   * Replaces undefined/empty fields with valid Firestore-friendly defaults.
+   */
+  const sanitizeProjectForFirestore = (proj: any) => {
+    const sanitized = { ...proj };
+
+    sanitized.coverImage = sanitized.coverImage || "";
+    sanitized.beforeImage = sanitized.beforeImage || "";
+    sanitized.afterImage = sanitized.afterImage || "";
+    
+    if (!sanitized.images || !Array.isArray(sanitized.images)) {
+      sanitized.images = [];
+    }
+
+    Object.keys(sanitized).forEach(key => {
+      if (sanitized[key] === undefined) {
+        if (key === 'beforeImage' || key === 'afterImage' || key === 'coverImage') {
+          sanitized[key] = "";
+        } else if (key === 'images' || key === 'galleryImages') {
+          sanitized[key] = [];
+        } else {
+          sanitized[key] = "";
+        }
+      }
+    });
+
+    return sanitized;
+  };
+
+  /**
    * Add a new project
    */
   const addProject = async (proj: Omit<Project, 'id' | 'createdAt'>) => {
     const newId = `proj_${Date.now()}`;
+    const sanitizedProj = sanitizeProjectForFirestore(proj);
     const newProject: Project = {
-      ...proj,
+      ...sanitizedProj,
       id: newId,
       createdAt: Date.now()
     };
+
+    console.log("Firestore Saving Project Payload:", JSON.stringify(newProject, null, 2));
 
     if (isFirebaseConnected) {
       try {
@@ -554,16 +587,20 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
    * Update existing project
    */
   const updateProject = async (id: string, proj: Partial<Project>) => {
+    const sanitizedProj = sanitizeProjectForFirestore(proj);
+
+    console.log(`Firestore Updating Project [ID: ${id}] Payload:`, JSON.stringify(sanitizedProj, null, 2));
+
     if (isFirebaseConnected) {
       try {
         const db = getDb();
-        await updateDoc(doc(db, 'projects', id), proj);
+        await updateDoc(doc(db, 'projects', id), sanitizedProj);
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, `projects/${id}`);
       }
     } else {
       // Demo State
-      setProjects(prev => prev.map(p => p.id === id ? { ...p, ...proj } : p));
+      setProjects(prev => prev.map(p => p.id === id ? { ...p, ...sanitizedProj } : p));
     }
   };
 
