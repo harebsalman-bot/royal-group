@@ -6,6 +6,7 @@
 import { initializeApp, getApps, getApp, FirebaseApp, deleteApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore, doc, getDocFromServer } from 'firebase/firestore';
+import firebaseConfigRaw from './firebase-applet-config.json';
 
 export enum OperationType {
   CREATE = 'create',
@@ -37,7 +38,7 @@ let firebaseApp: FirebaseApp | null = null;
 let dbInstance: Firestore | null = null;
 let authInstance: Auth | null = null;
 
-// Initialize Firebase only from environment variables
+// Initialize Firebase from environment variables or fallback local JSON config
 const envConfig = {
   apiKey: (import.meta as any).env.VITE_FIREBASE_API_KEY,
   authDomain: (import.meta as any).env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -48,49 +49,33 @@ const envConfig = {
   firestoreDatabaseId: (import.meta as any).env.VITE_FIREBASE_DATABASE_ID || (import.meta as any).env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || "ai-studio-royalgroup-9ad9c5e1-ff84-4044-be12-d1feb03a7592",
 };
 
-const missingVars: string[] = [];
-if (!envConfig.apiKey || envConfig.apiKey.trim() === "" || envConfig.apiKey === "undefined" || envConfig.apiKey === "null") {
-  missingVars.push("VITE_FIREBASE_API_KEY");
-}
-if (!envConfig.authDomain || envConfig.authDomain.trim() === "" || envConfig.authDomain === "undefined" || envConfig.authDomain === "null") {
-  missingVars.push("VITE_FIREBASE_AUTH_DOMAIN");
-}
-if (!envConfig.projectId || envConfig.projectId.trim() === "" || envConfig.projectId === "undefined" || envConfig.projectId === "null") {
-  missingVars.push("VITE_FIREBASE_PROJECT_ID");
-}
-if (!envConfig.storageBucket || envConfig.storageBucket.trim() === "" || envConfig.storageBucket === "undefined" || envConfig.storageBucket === "null") {
-  missingVars.push("VITE_FIREBASE_STORAGE_BUCKET");
-}
-if (!envConfig.messagingSenderId || envConfig.messagingSenderId.trim() === "" || envConfig.messagingSenderId === "undefined" || envConfig.messagingSenderId === "null") {
-  missingVars.push("VITE_FIREBASE_MESSAGING_SENDER_ID");
-}
-if (!envConfig.appId || envConfig.appId.trim() === "" || envConfig.appId === "undefined" || envConfig.appId === "null") {
-  missingVars.push("VITE_FIREBASE_APP_ID");
-}
+const isEnvConfigValid = 
+  envConfig.apiKey && 
+  envConfig.apiKey.trim() !== "" && 
+  envConfig.apiKey !== "undefined" &&
+  envConfig.apiKey !== "null" &&
+  envConfig.projectId && 
+  envConfig.projectId.trim() !== "" &&
+  envConfig.projectId !== "undefined" &&
+  envConfig.projectId !== "null";
 
-if (missingVars.length > 0) {
-  throw new Error(
-    `Firebase configuration error: Missing or invalid environment variable(s): ${missingVars.join(", ")}. ` +
-    `Please set these environment variables in your settings panel.`
-  );
-}
-
-let activeConfig = envConfig;
+const activeConfig = isEnvConfigValid ? envConfig : firebaseConfigRaw;
+const activeDatabaseId = activeConfig.firestoreDatabaseId || "ai-studio-royalgroup-9ad9c5e1-ff84-4044-be12-d1feb03a7592";
 
 console.log("Firebase Active Initialization Config:", {
   projectId: activeConfig.projectId,
   authDomain: activeConfig.authDomain,
   appId: activeConfig.appId,
   apiKey: activeConfig.apiKey ? `${activeConfig.apiKey.slice(0, 6)}... (length: ${activeConfig.apiKey.length})` : "MISSING",
-  isFromEnv: true
+  isFromEnv: isEnvConfigValid
 });
 
 try {
   firebaseApp = initializeApp(activeConfig);
-  dbInstance = getFirestore(firebaseApp, import.meta.env.VITE_FIREBASE_DATABASE_ID);
+  dbInstance = getFirestore(firebaseApp, activeDatabaseId);
   authInstance = getAuth(firebaseApp);
 } catch (error) {
-  console.error("Failed to initialize Firebase with environment config:", error);
+  console.error("Failed to initialize Firebase with fallback config:", error);
   throw error;
 }
 
@@ -104,7 +89,7 @@ export function initializeDynamicFirebase(config: any): boolean {
   }
   try {
     firebaseApp = initializeApp(config);
-    dbInstance = getFirestore(firebaseApp, import.meta.env.VITE_FIREBASE_DATABASE_ID);
+    dbInstance = getFirestore(firebaseApp, activeDatabaseId);
     authInstance = getAuth(firebaseApp);
     
     return true;
@@ -129,7 +114,7 @@ export async function testFirebaseConnection(config: any): Promise<{ success: bo
   try {
     const tempAppName = `temp-test-${Date.now()}`;
     tempApp = initializeApp(config, tempAppName);
-    const tempDb = getFirestore(tempApp, import.meta.env.VITE_FIREBASE_DATABASE_ID);
+    const tempDb = getFirestore(tempApp, config.firestoreDatabaseId || activeDatabaseId);
     
     // Attempt a live server read
     await getDocFromServer(doc(tempDb, 'test', 'connection'));
