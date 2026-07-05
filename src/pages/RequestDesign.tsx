@@ -64,8 +64,10 @@ export const RequestDesign: React.FC<RequestDesignProps> = ({ setActiveTab }) =>
         imageFiles
       );
 
-      if (result && result.ticketId) {
-        localStorage.setItem('active_client_ticket_id', result.ticketId);
+      if (result) {
+        localStorage.setItem('active_client_request_id', result.id);
+        localStorage.setItem('active_client_request_num', result.requestNumber || result.id);
+        localStorage.setItem('active_client_request_fresh', 'true');
       }
 
       setSuccessRequestNumber(result?.requestNumber || '');
@@ -80,6 +82,10 @@ export const RequestDesign: React.FC<RequestDesignProps> = ({ setActiveTab }) =>
       setBudget('');
       setPlanFiles([]);
       setImageFiles([]);
+
+      if (setActiveTab) {
+        setActiveTab('track');
+      }
     } catch (err: any) {
       console.error("Form Submission Error:", err);
       

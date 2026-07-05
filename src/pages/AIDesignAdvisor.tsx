@@ -214,12 +214,22 @@ export const AIDesignAdvisor: React.FC<AIDesignAdvisorProps> = ({ setActiveTab }
         [selectedFile] // Room image is uploaded as design reference
       );
 
+      if (result) {
+        localStorage.setItem('active_client_request_id', result.id);
+        localStorage.setItem('active_client_request_num', result.requestNumber || result.id);
+        localStorage.setItem('active_client_request_fresh', 'true');
+      }
+
       setSuccessRequestNumber(result?.requestNumber || 'RG-PENDING');
       setFormStatus('success');
       setClientName('');
       setClientPhone('');
       setClientArea('');
       setClientBudget('');
+
+      if (setActiveTab) {
+        setActiveTab('track');
+      }
     } catch (err: any) {
       console.error("Execution request failed:", err);
       setFormStatus('error');
@@ -253,9 +263,19 @@ export const AIDesignAdvisor: React.FC<AIDesignAdvisorProps> = ({ setActiveTab }
         [selectedFile] // Room image uploaded
       );
 
+      if (result) {
+        localStorage.setItem('active_client_request_id', result.id);
+        localStorage.setItem('active_client_request_num', result.requestNumber || result.id);
+        localStorage.setItem('active_client_request_fresh', 'true');
+      }
+
       setSuccessRequestNumber(result?.requestNumber || 'RG-PENDING');
       setFormStatus('success');
       setShowRequestForm(true);
+
+      if (setActiveTab) {
+        setActiveTab('track');
+      }
     } catch (err: any) {
       console.error("Auto execute design failed:", err);
       alert("حدث خطأ أثناء تسجيل وتنفيذ التصميم تلقائياً: " + (err.message || err));

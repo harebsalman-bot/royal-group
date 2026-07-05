@@ -52,7 +52,7 @@ export default function App() {
       case 'request':
         return <RequestDesign setActiveTab={setActiveTab} />;
       case 'track':
-        return <TrackRequest />;
+        return <TrackRequest setActiveTab={setActiveTab} />;
       case 'tickets':
         return <ProjectTickets />;
       case 'contact':

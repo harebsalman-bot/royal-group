@@ -214,13 +214,19 @@ export const ColorLab: React.FC<ColorLabProps> = ({ setActiveTab }) => {
         ].filter(Boolean) as string[]
       });
 
-      if (res && res.ticketId) {
-        localStorage.setItem('active_client_ticket_id', res.ticketId);
+      if (res) {
+        localStorage.setItem('active_client_request_id', res.id);
+        localStorage.setItem('active_client_request_num', res.requestNumber || res.id);
+        localStorage.setItem('active_client_request_fresh', 'true');
       }
 
       setColorSuccessRequestNumber(res?.requestNumber || 'RG-' + Math.floor(1000 + Math.random() * 9000));
       setColorSuccessPhone(colorClientPhone.trim());
       setColorSubmittedSuccess(true);
+
+      if (setActiveTab) {
+        setActiveTab('track');
+      }
     } catch (err: any) {
       console.error("Color lab submit error:", err);
       setColorFormError('حدث خطأ أثناء إرسال طلب الألوان. يرجى المحاولة لاحقاً.');
@@ -330,8 +336,10 @@ export const ColorLab: React.FC<ColorLabProps> = ({ setActiveTab }) => {
         selections: formattedSelections
       });
 
-      if (result && result.ticketId) {
-        localStorage.setItem('active_client_ticket_id', result.ticketId);
+      if (result) {
+        localStorage.setItem('active_client_request_id', result.id);
+        localStorage.setItem('active_client_request_num', result.requestNumber || result.id);
+        localStorage.setItem('active_client_request_fresh', 'true');
       }
 
       setSuccessRequestNumber(result?.requestNumber || '');
@@ -339,6 +347,10 @@ export const ColorLab: React.FC<ColorLabProps> = ({ setActiveTab }) => {
       setSubmitting(false);
       setSubmittedSuccess(true);
       setCopied(false);
+
+      if (setActiveTab) {
+        setActiveTab('track');
+      }
     } catch (err: any) {
       console.error("Bedroom Submission Error:", err);
       setFormError('حدث خطأ أثناء إرسال طلبك. يرجى المحاولة مرة أخرى.');
