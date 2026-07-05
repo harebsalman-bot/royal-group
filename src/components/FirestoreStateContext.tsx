@@ -568,24 +568,25 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       createdAt: Date.now()
     };
 
-    console.log("Firestore Saving Project Payload:", JSON.stringify(newProject, null, 2));
-
     if (isFirebaseConnected) {
+      const db = getDb();
+      const projectData = newProject;
+      let auth: any = null;
       try {
-        const db = getDb();
-        const projectData = newProject;
-        let auth: any = null;
-        try {
-          auth = getAuthService();
-        } catch (authErr) {
-          // Fallback if auth is not initialized
-        }
+        auth = getAuthService();
+      } catch (authErr) {
+        // Fallback if auth is not initialized
+      }
 
-        console.log("PROJECT PAYLOAD", JSON.stringify(projectData, null, 2));
-        console.log("AUTH USER", auth?.currentUser?.email);
+      console.log("PROJECT PAYLOAD RAW", projectData);
+      console.log("PROJECT PAYLOAD JSON", JSON.stringify(projectData, null, 2));
+      console.log("AUTH USER", auth?.currentUser?.email);
 
+      try {
         await setDoc(doc(db, 'projects', newId), projectData);
       } catch (error) {
+        console.error("PROJECT VALIDATION DATA", projectData);
+        console.error("FIRESTORE SETDOC ERROR:", error);
         handleFirestoreError(error, OperationType.CREATE, `projects/${newId}`);
       }
     } else {
@@ -600,13 +601,25 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   const updateProject = async (id: string, proj: Partial<Project>) => {
     const sanitizedProj = sanitizeProjectForFirestore(proj);
 
-    console.log(`Firestore Updating Project [ID: ${id}] Payload:`, JSON.stringify(sanitizedProj, null, 2));
-
     if (isFirebaseConnected) {
+      const db = getDb();
+      const projectData = sanitizedProj;
+      let auth: any = null;
       try {
-        const db = getDb();
-        await updateDoc(doc(db, 'projects', id), sanitizedProj);
+        auth = getAuthService();
+      } catch (authErr) {
+        // Fallback if auth is not initialized
+      }
+
+      console.log("PROJECT PAYLOAD RAW", projectData);
+      console.log("PROJECT PAYLOAD JSON", JSON.stringify(projectData, null, 2));
+      console.log("AUTH USER", auth?.currentUser?.email);
+
+      try {
+        await updateDoc(doc(db, 'projects', id), projectData);
       } catch (error) {
+        console.error("PROJECT VALIDATION DATA", projectData);
+        console.error("FIRESTORE UPDATEDOC ERROR:", error);
         handleFirestoreError(error, OperationType.UPDATE, `projects/${id}`);
       }
     } else {
