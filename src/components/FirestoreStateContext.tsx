@@ -180,6 +180,7 @@ interface FirebaseStateContextType {
   updateBedroomSubmissionStatus: (id: string, status: RequestStatus, additionalFields?: Partial<BedroomSubmission>) => Promise<void>;
   deleteBedroomSubmission: (id: string) => Promise<void>;
   addEngineer: (engineer: Omit<Engineer, 'id' | 'createdAt'>) => Promise<void>;
+  updateEngineer: (id: string, updates: Partial<Engineer>) => Promise<void>;
   deleteEngineer: (id: string) => Promise<void>;
   createTicket: (ticket: Omit<Ticket, 'id' | 'createdAt' | 'updatedAt' | 'status'>, attachmentFiles?: File[]) => Promise<Ticket>;
   updateTicketStatus: (id: string, status: TicketStatus) => Promise<void>;
@@ -187,6 +188,7 @@ interface FirebaseStateContextType {
   sendTicketMessage: (msg: Omit<Message, 'id' | 'createdAt'>, files?: File[]) => Promise<void>;
   addNotification: (notification: Omit<TicketNotification, 'id' | 'createdAt' | 'read'>) => Promise<void>;
   markNotificationAsRead: (id: string) => Promise<void>;
+  findOrCreateTicketByTrackingOrPhone: (queryStr: string) => Promise<Ticket | null>;
 }
 
 const FirebaseStateContext = createContext<FirebaseStateContextType | undefined>(undefined);
@@ -920,6 +922,21 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       // Demo State
       setDesignRequests(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
     }
+
+    if (status === 'Approved') {
+      const req = designRequests.find(r => r.id === id);
+      if (req) {
+        await handleAutoCreateTicketOnApproval(
+          id,
+          'design_request',
+          req.name,
+          req.phone,
+          `طلب تصميم - ${req.projectType}`,
+          `تذكرة تم إنشاؤها تلقائياً لطلب تصميم معتمد رقم ${req.requestNumber || req.id}`,
+          req.requestNumber || req.id
+        );
+      }
+    }
   };
 
   /**
@@ -1098,6 +1115,21 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     } else {
       setBedroomSubmissions(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
     }
+
+    if (status === 'Approved') {
+      const sub = bedroomSubmissions.find(s => s.id === id);
+      if (sub) {
+        await handleAutoCreateTicketOnApproval(
+          id,
+          'bedroom_submission',
+          sub.clientName,
+          sub.clientPhone,
+          `تصميم غرفة نوم مخصص`,
+          `تذكرة تم إنشاؤها تلقائياً لطلب تصميم غرفة نوم معتمد رقم ${sub.requestNumber || sub.id}`,
+          sub.requestNumber || sub.id
+        );
+      }
+    }
   };
 
   /**
@@ -1155,6 +1187,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   const addEngineer = async (engineer: Omit<Engineer, 'id' | 'createdAt'>) => {
     const newId = `eng_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
     const newEng: Engineer = {
+      active: true,
+      role: 'engineer',
       ...engineer,
       id: newId,
       createdAt: Date.now()
@@ -1173,6 +1207,22 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   /**
+   * Project Ticket System: Update an engineer (Admin)
+   */
+  const updateEngineer = async (id: string, updates: Partial<Engineer>) => {
+    if (isFirebaseConnected) {
+      try {
+        const db = getDb();
+        await updateDoc(doc(db, 'engineers', id), updates);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `engineers/${id}`);
+      }
+    } else {
+      setEngineers(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
+    }
+  };
+
+  /**
    * Project Ticket System: Delete an engineer (Admin)
    */
   const deleteEngineer = async (id: string) => {
@@ -1186,6 +1236,217 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     } else {
       setEngineers(prev => prev.filter(e => e.id !== id));
     }
+  };
+
+  /**
+   * Helper: Automatically create a ticket when a request/submission is approved
+   */
+  const handleAutoCreateTicketOnApproval = async (
+    requestId: string,
+    type: 'design_request' | 'bedroom_submission',
+    clientName: string,
+    clientPhone: string,
+    title: string,
+    description: string,
+    trackingId: string
+  ) => {
+    // Check if ticket already exists
+    const existing = tickets.find(t => t.requestId === requestId || t.sourceId === requestId);
+    if (existing) return;
+
+    const ticketId = await generateTicketId();
+    const newTicket: Ticket = {
+      id: ticketId,
+      requestId,
+      trackingId,
+      sourceId: requestId,
+      sourceType: type,
+      clientName,
+      clientPhone,
+      title,
+      description,
+      status: 'open',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+
+    if (isFirebaseConnected) {
+      try {
+        const db = getDb();
+        await setDoc(doc(db, 'tickets', ticketId), newTicket);
+        
+        // System message
+        const systemMsg: Message = {
+          id: `msg_welcome_${Date.now()}`,
+          ticketId,
+          senderId: 'admin',
+          senderName: 'إدارة رويال جروب',
+          senderRole: 'admin',
+          content: `أهلاً بك يا ${clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
+          createdAt: Date.now()
+        };
+        await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
+      } catch (error) {
+        console.error("Error auto-creating ticket on approval:", error);
+      }
+    } else {
+      setTickets(prev => [newTicket, ...prev]);
+      const systemMsg: Message = {
+        id: `msg_welcome_${Date.now()}`,
+        ticketId,
+        senderId: 'admin',
+        senderName: 'إدارة رويال جروب',
+        senderRole: 'admin',
+        content: `أهلاً بك يا ${clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
+        createdAt: Date.now()
+      };
+      setMessages(prev => [...prev, systemMsg]);
+    }
+  };
+
+  /**
+   * Search and automatically create a ticket by tracking ID or Phone Number if needed
+   */
+  const findOrCreateTicketByTrackingOrPhone = async (queryStr: string): Promise<Ticket | null> => {
+    const q = queryStr.trim().toUpperCase();
+    if (!q) return null;
+
+    // 1. Search tickets state
+    let existingTicket = tickets.find(t => 
+      t.id.toUpperCase() === q || 
+      t.clientPhone === queryStr || 
+      (t.trackingId && t.trackingId.toUpperCase() === q) ||
+      (t.requestId && t.requestId.toUpperCase() === q)
+    );
+
+    if (existingTicket) {
+      return existingTicket;
+    }
+
+    // 2. Search designRequests
+    const matchedRequest = designRequests.find(r => 
+      (r.requestNumber && r.requestNumber.toUpperCase() === q) || 
+      r.id.toUpperCase() === q || 
+      r.phone === queryStr
+    );
+
+    if (matchedRequest) {
+      // Check if ticket exists
+      const t = tickets.find(x => x.requestId === matchedRequest.id || x.sourceId === matchedRequest.id);
+      if (t) return t;
+
+      const ticketId = await generateTicketId();
+      const newTicket: Ticket = {
+        id: ticketId,
+        requestId: matchedRequest.id,
+        trackingId: matchedRequest.requestNumber || matchedRequest.id,
+        sourceId: matchedRequest.id,
+        sourceType: 'design_request',
+        clientName: matchedRequest.name,
+        clientPhone: matchedRequest.phone,
+        title: `طلب تصميم - ${matchedRequest.projectType}`,
+        description: `تذكرة تم إنشاؤها تلقائياً لطلب تصميم رقم ${matchedRequest.requestNumber || matchedRequest.id}`,
+        status: 'open',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+
+      if (isFirebaseConnected) {
+        try {
+          const db = getDb();
+          await setDoc(doc(db, 'tickets', ticketId), newTicket);
+          
+          const systemMsg: Message = {
+            id: `msg_welcome_${Date.now()}`,
+            ticketId,
+            senderId: 'admin',
+            senderName: 'إدارة رويال جروب',
+            senderRole: 'admin',
+            content: `أهلاً بك يا ${newTicket.clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
+            createdAt: Date.now()
+          };
+          await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
+        } catch (error) {
+          console.error("Error creating ticket via client search:", error);
+        }
+      } else {
+        setTickets(prev => [newTicket, ...prev]);
+        const systemMsg: Message = {
+          id: `msg_welcome_${Date.now()}`,
+          ticketId,
+          senderId: 'admin',
+          senderName: 'إدارة رويال جروب',
+          senderRole: 'admin',
+          content: `أهلاً بك يا ${newTicket.clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
+          createdAt: Date.now()
+        };
+        setMessages(prev => [...prev, systemMsg]);
+      }
+      return newTicket;
+    }
+
+    // 3. Search bedroomSubmissions
+    const matchedSubmission = bedroomSubmissions.find(s => 
+      (s.requestNumber && s.requestNumber.toUpperCase() === q) || 
+      s.id.toUpperCase() === q || 
+      s.clientPhone === queryStr
+    );
+
+    if (matchedSubmission) {
+      const t = tickets.find(x => x.requestId === matchedSubmission.id || x.sourceId === matchedSubmission.id);
+      if (t) return t;
+
+      const ticketId = await generateTicketId();
+      const newTicket: Ticket = {
+        id: ticketId,
+        requestId: matchedSubmission.id,
+        trackingId: matchedSubmission.requestNumber || matchedSubmission.id,
+        sourceId: matchedSubmission.id,
+        sourceType: 'bedroom_submission',
+        clientName: matchedSubmission.clientName,
+        clientPhone: matchedSubmission.clientPhone,
+        title: `تصميم غرفة نوم مخصص`,
+        description: `تذكرة تم إنشاؤها تلقائياً لطلب تصميم غرفة نوم رقم ${matchedSubmission.requestNumber || matchedSubmission.id}`,
+        status: 'open',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+
+      if (isFirebaseConnected) {
+        try {
+          const db = getDb();
+          await setDoc(doc(db, 'tickets', ticketId), newTicket);
+          
+          const systemMsg: Message = {
+            id: `msg_welcome_${Date.now()}`,
+            ticketId,
+            senderId: 'admin',
+            senderName: 'إدارة رويال جروب',
+            senderRole: 'admin',
+            content: `أهلاً بك يا ${newTicket.clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
+            createdAt: Date.now()
+          };
+          await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
+        } catch (error) {
+          console.error("Error creating ticket via client search bedroom:", error);
+        }
+      } else {
+        setTickets(prev => [newTicket, ...prev]);
+        const systemMsg: Message = {
+          id: `msg_welcome_${Date.now()}`,
+          ticketId,
+          senderId: 'admin',
+          senderName: 'إدارة رويال جروب',
+          senderRole: 'admin',
+          content: `أهلاً بك يا ${newTicket.clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
+          createdAt: Date.now()
+        };
+        setMessages(prev => [...prev, systemMsg]);
+      }
+      return newTicket;
+    }
+
+    return null;
   };
 
   /**
@@ -1534,13 +1795,15 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       updateBedroomSubmissionStatus,
       deleteBedroomSubmission,
       addEngineer,
+      updateEngineer,
       deleteEngineer,
       createTicket,
       updateTicketStatus,
       assignTicket,
       sendTicketMessage,
       addNotification,
-      markNotificationAsRead
+      markNotificationAsRead,
+      findOrCreateTicketByTrackingOrPhone
     }}>
       {children}
     </FirebaseStateContext.Provider>

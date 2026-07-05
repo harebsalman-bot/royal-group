@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useFirebaseState } from '../components/FirestoreStateContext';
 import { 
   Plus, MessageSquare, Send, Paperclip, User, Shield, Users, Ticket as TicketIcon, CheckCircle2, 
-  Clock, AlertCircle, RefreshCw, ChevronLeft, Search, UserCheck, Check, LogOut, FileText, Bell, Trash2
+  Clock, AlertCircle, RefreshCw, ChevronLeft, Search, UserCheck, Check, LogOut, FileText, Bell, Trash2, Edit
 } from 'lucide-react';
 import { Ticket, Engineer, Message, TicketStatus, TicketNotification } from '../types';
 
@@ -21,12 +21,14 @@ export const ProjectTickets: React.FC = () => {
     designRequests,
     bedroomSubmissions,
     addEngineer,
+    updateEngineer,
     deleteEngineer,
     createTicket,
     updateTicketStatus,
     assignTicket,
     sendTicketMessage,
-    markNotificationAsRead
+    markNotificationAsRead,
+    findOrCreateTicketByTrackingOrPhone
   } = useFirebaseState();
 
   // Roles: 'client', 'engineer', 'admin'
@@ -57,6 +59,14 @@ export const ProjectTickets: React.FC = () => {
   const [isAddingEng, setIsAddingEng] = useState(false);
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
   const [adminStatusFilter, setAdminStatusFilter] = useState<'all' | TicketStatus>('all');
+
+  const [editingEngineerId, setEditingEngineerId] = useState<string | null>(null);
+  const [editEngName, setEditEngName] = useState('');
+  const [editEngEmail, setEditEngEmail] = useState('');
+  const [editEngSpecialty, setEditEngSpecialty] = useState('');
+  const [editEngPhone, setEditEngPhone] = useState('');
+  const [editEngActive, setEditEngActive] = useState(true);
+  const [engineerSearchQuery, setEngineerSearchQuery] = useState('');
 
   // Chat/Messaging States
   const [chatInput, setChatInput] = useState('');
@@ -257,6 +267,28 @@ export const ProjectTickets: React.FC = () => {
     }
   };
 
+  const handleUpdateEngineer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEngineerId) return;
+    if (!editEngName.trim() || !editEngEmail.trim() || !editEngPhone.trim()) {
+      alert('يرجى ملء الاسم والبريد الإلكتروني والهاتف للمهندس');
+      return;
+    }
+
+    try {
+      await updateEngineer(editingEngineerId, {
+        name: editEngName,
+        email: editEngEmail.toLowerCase().trim(),
+        specialty: editEngSpecialty,
+        phone: editEngPhone,
+        active: editEngActive
+      });
+      setEditingEngineerId(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleStatusChange = async (status: TicketStatus) => {
     if (!selectedTicketId) return;
     try {
@@ -279,19 +311,25 @@ export const ProjectTickets: React.FC = () => {
     }
   };
 
-  const handleClientSearch = (e: React.FormEvent) => {
+  const handleClientSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     setClientError('');
-    const targetId = clientSearchId.trim().toUpperCase();
+    setClientSuccess('');
+    const targetId = clientSearchId.trim();
     if (!targetId) return;
 
-    const found = tickets.find(t => t.id === targetId || t.clientPhone === targetId);
-    if (found) {
-      setSelectedTicketId(found.id);
-      setClientSuccess('');
-    } else {
-      setClientError('لم نتمكن من العثور على تذكرة بهذا الرقم أو رقم الهاتف. يرجى مراجعة المدخلات.');
-      setSelectedTicketId(null);
+    try {
+      const ticket = await findOrCreateTicketByTrackingOrPhone(targetId);
+      if (ticket) {
+        setSelectedTicketId(ticket.id);
+        setClientSuccess('تم العثور على التذكرة/الطلب بنجاح والدخول إلى الغرفة الخاصة.');
+      } else {
+        setClientError('لم نتمكن من العثور على تذكرة أو طلب بهذا الرقم أو رقم الهاتف. يرجى مراجعة المدخلات.');
+        setSelectedTicketId(null);
+      }
+    } catch (err) {
+      console.error(err);
+      setClientError('حدث خطأ أثناء البحث. يرجى المحاولة لاحقاً.');
     }
   };
 
@@ -557,121 +595,306 @@ export const ProjectTickets: React.FC = () => {
               <div className="space-y-8">
                 
                 {/* SYSTEM STATS GRID */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-xl p-5 space-y-4">
-                  <h3 className="font-bold text-base text-gray-900">إحصائيات التذاكر الفنية</h3>
+                <div className="bg-[#171714] border border-[#d4af37]/25 rounded-2xl shadow-xl p-5 space-y-4 text-white">
+                  <h3 className="font-bold text-base text-[#d4af37]">إحصائيات النظام والتذاكر</h3>
                   <div className="grid grid-cols-2 gap-3 text-center text-xs">
-                    <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
-                      <span className="text-gray-400 block font-bold mb-1">إجمالي التذاكر</span>
-                      <span className="text-2xl font-black text-gray-900">{tickets.length}</span>
+                    <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3">
+                      <span className="text-neutral-400 block font-bold mb-1">إجمالي التذاكر</span>
+                      <span className="text-2xl font-black text-[#d4af37]">{tickets.length}</span>
                     </div>
-                    <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-3">
-                      <span className="text-blue-500 block font-bold mb-1">المفتوحة</span>
-                      <span className="text-2xl font-black text-blue-700">{tickets.filter(t => t.status === 'open').length}</span>
+                    <div className="bg-blue-950/40 border border-blue-900/30 rounded-xl p-3">
+                      <span className="text-blue-400 block font-bold mb-1">تذاكر مفتوحة</span>
+                      <span className="text-2xl font-black text-blue-300">{tickets.filter(t => t.status === 'open').length}</span>
                     </div>
-                    <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-3">
-                      <span className="text-[#d4af37] block font-bold mb-1">قيد المعالجة</span>
-                      <span className="text-2xl font-black text-[#b8952b]">{tickets.filter(t => t.status === 'in_progress').length}</span>
+                    <div className="bg-amber-950/40 border border-amber-900/30 rounded-xl p-3">
+                      <span className="text-amber-400 block font-bold mb-1">قيد المعالجة</span>
+                      <span className="text-2xl font-black text-amber-300">{tickets.filter(t => t.status === 'in_progress').length}</span>
                     </div>
-                    <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-3">
-                      <span className="text-emerald-500 block font-bold mb-1">المغلقة</span>
-                      <span className="text-2xl font-black text-emerald-700">{tickets.filter(t => t.status === 'closed').length}</span>
+                    <div className="bg-emerald-950/40 border border-emerald-900/30 rounded-xl p-3">
+                      <span className="text-emerald-400 block font-bold mb-1">المغلقة والمنتهية</span>
+                      <span className="text-2xl font-black text-emerald-300">{tickets.filter(t => t.status === 'closed').length}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* CREATE ENGINEER ACCOUNT FORM */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-xl p-5 space-y-4">
-                  <div>
-                    <h3 className="font-bold text-base text-gray-900 flex items-center gap-2">
-                      <Plus className="w-5 h-5 text-[#d4af37]" />
-                      إنشاء حساب مهندس مصمم
-                    </h3>
-                    <p className="text-[11px] text-gray-400 mt-1">توليد حسابات للمهندسين ليتمكنوا من متابعة وإسناد تذاكر العملاء.</p>
-                  </div>
-
-                  <form onSubmit={handleAddEngineer} className="space-y-3 text-xs font-semibold">
+                {/* COMPREHENSIVE ENGINEER MANAGEMENT SECTION */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-xl p-5 space-y-5">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-gray-100 pb-3 gap-2">
                     <div>
-                      <label className="block text-gray-700 mb-1">اسم المهندس الثنائي:</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="مثال: المهندس علي الكناني"
-                        value={engName}
-                        onChange={(e) => setEngName(e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:ring-1 focus:ring-[#d4af37] focus:border-[#d4af37]"
-                      />
+                      <h3 className="font-bold text-base text-gray-900 flex items-center gap-2">
+                        <Users className="w-5 h-5 text-[#d4af37]" />
+                        إدارة المهندسين المصممين
+                      </h3>
+                      <p className="text-[11px] text-gray-400 mt-0.5">تسجيل، تعديل، تنشيط وتعطيل كادر المهندسين والاطلاع على إحصاءاتهم.</p>
                     </div>
                     
-                    <div>
-                      <label className="block text-gray-700 mb-1">البريد الإلكتروني المهني:</label>
-                      <input
-                        type="email"
-                        required
-                        placeholder="ali@royalgroup.com"
-                        value={engEmail}
-                        onChange={(e) => setEngEmail(e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:ring-1 focus:ring-[#d4af37] focus:border-[#d4af37] text-left"
-                      />
+                    {/* ENGINEER QUICK STATS */}
+                    <div className="flex gap-2 text-[10px] font-bold">
+                      <div className="px-2.5 py-1 bg-gray-100 text-gray-800 rounded-lg">
+                        إجمالي المهندسين: {engineers.length}
+                      </div>
+                      <div className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg">
+                        النشطين: {engineers.filter(e => e.active !== false).length}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* EDIT OR CREATE FORM CONTAINER */}
+                  {editingEngineerId ? (
+                    /* EDIT ENGINEER FORM */
+                    <div className="bg-[#d4af37]/5 border border-[#d4af37]/25 rounded-xl p-4 space-y-3">
+                      <div className="flex justify-between items-center">
+                        <h4 className="font-bold text-xs text-[#b8952b] flex items-center gap-1.5">
+                          <Edit className="w-4 h-4" />
+                          تعديل حساب المهندس: {editEngName}
+                        </h4>
+                        <button 
+                          onClick={() => setEditingEngineerId(null)}
+                          className="text-gray-400 hover:text-gray-600 text-xs font-bold"
+                        >
+                          إلغاء التعديل
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleUpdateEngineer} className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-semibold">
+                        <div>
+                          <label className="block text-gray-700 mb-1">الاسم الكامل:</label>
+                          <input
+                            type="text"
+                            required
+                            value={editEngName}
+                            onChange={(e) => setEditEngName(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-1 focus:ring-[#d4af37]"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-gray-700 mb-1">البريد الإلكتروني:</label>
+                          <input
+                            type="email"
+                            required
+                            value={editEngEmail}
+                            onChange={(e) => setEditEngEmail(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-1 focus:ring-[#d4af37] text-left"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-gray-700 mb-1">التخصص الدقيق:</label>
+                          <input
+                            type="text"
+                            required
+                            value={editEngSpecialty}
+                            onChange={(e) => setEditEngSpecialty(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-1 focus:ring-[#d4af37]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-gray-700 mb-1">رقم الهاتف:</label>
+                          <input
+                            type="text"
+                            required
+                            value={editEngPhone}
+                            onChange={(e) => setEditEngPhone(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-1 focus:ring-[#d4af37] text-left"
+                          />
+                        </div>
+
+                        <div className="md:col-span-2 flex items-center gap-2 py-1">
+                          <input
+                            type="checkbox"
+                            id="editEngActive"
+                            checked={editEngActive}
+                            onChange={(e) => setEditEngActive(e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 text-[#d4af37] focus:ring-[#d4af37]"
+                          />
+                          <label htmlFor="editEngActive" className="text-gray-800 font-bold cursor-pointer">
+                            حساب المهندس نشط ومتاح لاستلام المشاريع والتذاكر
+                          </label>
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <button
+                            type="submit"
+                            className="w-full py-2 bg-[#171714] text-[#d4af37] font-bold border border-[#d4af37]/30 rounded-xl hover:bg-[#20201c] transition-all"
+                          >
+                            حفظ وتحديث بيانات المهندس
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  ) : (
+                    /* ADD NEW ENGINEER FORM */
+                    <details className="bg-gray-50 border border-gray-100 rounded-xl p-4 group" open={engineers.length === 0}>
+                      <summary className="font-bold text-xs text-gray-800 flex items-center justify-between cursor-pointer outline-none select-none">
+                        <span className="flex items-center gap-1.5">
+                          <Plus className="w-4 h-4 text-[#d4af37]" />
+                          تسجيل وإضافة مهندس مصمم جديد
+                        </span>
+                        <span className="text-[10px] text-[#d4af37] group-open:hidden">+ اضغط للتوسيع</span>
+                        <span className="text-[10px] text-gray-400 hidden group-open:inline">- اضغط للإغلاق</span>
+                      </summary>
+
+                      <form onSubmit={handleAddEngineer} className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-semibold mt-4 pt-4 border-t border-gray-200/50">
+                        <div>
+                          <label className="block text-gray-700 mb-1">اسم المهندس الثنائي:</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="مثال: المهندس أحمد جاسم"
+                            value={engName}
+                            onChange={(e) => setEngName(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-1 focus:ring-[#d4af37]"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-gray-700 mb-1">البريد الإلكتروني المهني:</label>
+                          <input
+                            type="email"
+                            required
+                            placeholder="ahmed@royalgroup.com"
+                            value={engEmail}
+                            onChange={(e) => setEngEmail(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-1 focus:ring-[#d4af37] text-left"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-gray-700 mb-1">التخصص الدقيق:</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="مثال: ديكورات داخلية وتصميم ثنائي وثلاثي الأبعاد"
+                            value={engSpecialty}
+                            onChange={(e) => setEngSpecialty(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-1 focus:ring-[#d4af37]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-gray-700 mb-1">رقم الهاتف الفعال:</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="0770..."
+                            value={engPhone}
+                            onChange={(e) => setEngPhone(e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:ring-1 focus:ring-[#d4af37] text-left"
+                          />
+                        </div>
+
+                        <div className="md:col-span-2 pt-1">
+                          <button
+                            type="submit"
+                            disabled={isAddingEng}
+                            className="w-full py-2.5 bg-[#171714] text-[#d4af37] border border-[#d4af37]/35 rounded-xl text-xs font-bold hover:bg-[#20201c] transition-all disabled:opacity-50"
+                          >
+                            {isAddingEng ? 'جاري الحفظ والتسجيل...' : 'تسجيل المهندس واعتماده في النظام'}
+                          </button>
+                        </div>
+                      </form>
+                    </details>
+                  )}
+
+                  {/* ENGINEERS DIRECTORY WITH FILTER & STATUS */}
+                  <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <h4 className="font-bold text-xs text-gray-800">قائمة كادر مهندسي رويال جروب:</h4>
+                      
+                      {/* SEARCH BOX FOR DIRECTORY */}
+                      <div className="relative w-full sm:w-64">
+                        <input
+                          type="text"
+                          placeholder="ابحث بالاسم أو التخصص..."
+                          value={engineerSearchQuery}
+                          onChange={(e) => setEngineerSearchQuery(e.target.value)}
+                          className="w-full pr-8 pl-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg outline-none focus:bg-white"
+                        />
+                        <Search className="absolute right-2.5 top-2 w-3.5 h-3.5 text-gray-400" />
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-gray-700 mb-1">التخصص الدقيق:</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="ديكورات داخلية، تصميم ثلاثي الأبعاد، إلخ"
-                        value={engSpecialty}
-                        onChange={(e) => setEngSpecialty(e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:ring-1 focus:ring-[#d4af37] focus:border-[#d4af37]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-gray-700 mb-1">رقم الهاتف الفعال:</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="0770..."
-                        value={engPhone}
-                        onChange={(e) => setEngPhone(e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:ring-1 focus:ring-[#d4af37] focus:border-[#d4af37] text-left"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isAddingEng}
-                      className="w-full py-2.5 bg-[#171714] text-[#d4af37] border border-[#d4af37]/35 rounded-xl text-xs font-bold hover:bg-[#20201c] transition-all disabled:opacity-50"
-                    >
-                      {isAddingEng ? 'جاري الحفظ والتسجيل...' : 'تسجيل المهندس واعتماده'}
-                    </button>
-                  </form>
-
-                  {/* ACTIVE ENGINEERS LIST */}
-                  <div className="border-t border-gray-100 pt-4 mt-4">
-                    <h4 className="font-bold text-xs text-gray-800 mb-2.5">قائمة كادر مهندسي رويال:</h4>
                     {engineers.length === 0 ? (
-                      <p className="text-[11px] text-gray-400 text-center">لا يوجد مهندسون نشطون حالياً.</p>
+                      <p className="text-[11px] text-gray-400 text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">لا يوجد مهندسون مسجلون حالياً في النظام.</p>
                     ) : (
-                      <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {engineers.map(eng => (
-                          <div key={eng.id} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-xl border border-gray-100 text-xs">
-                            <div className="text-right">
-                              <p className="font-bold text-gray-900">{eng.name}</p>
-                              <p className="text-[10px] text-gray-400 mt-0.5">{eng.email} • {eng.specialty}</p>
-                            </div>
-                            <button
-                              onClick={() => {
-                                if (confirm('هل أنت متأكد من تعطيل وحذف حساب هذا المهندس؟')) {
-                                  deleteEngineer(eng.id);
-                                }
-                              }}
-                              className="text-red-500 hover:text-red-700 p-1 rounded-lg hover:bg-red-50 transition-colors"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))}
+                      <div className="space-y-2 max-h-72 overflow-y-auto">
+                        {engineers
+                          .filter(eng => {
+                            const q = engineerSearchQuery.toLowerCase();
+                            return eng.name.toLowerCase().includes(q) || (eng.specialty && eng.specialty.toLowerCase().includes(q));
+                          })
+                          .map(eng => {
+                            const busyCount = tickets.filter(t => t.assignedEngineerId === eng.id && t.status !== 'closed').length;
+                            const isActive = eng.active !== false;
+
+                            return (
+                              <div key={eng.id} className={`flex items-center justify-between p-3 rounded-xl border transition-all text-xs ${isActive ? 'bg-white border-gray-100 hover:border-gray-200 shadow-sm' : 'bg-gray-50 border-gray-200/60 opacity-75'}`}>
+                                <div className="text-right space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-gray-900">{eng.name}</span>
+                                    
+                                    {/* ACTIVE / DISABLED BADGE */}
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                                      {isActive ? 'نشط' : 'معطل'}
+                                    </span>
+
+                                    {busyCount > 0 && (
+                                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-black">
+                                        يعمل على {busyCount} مشروع
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-gray-500 font-medium">
+                                    {eng.email} • {eng.specialty || 'تصميم عام'} • {eng.phone}
+                                  </p>
+                                </div>
+                                
+                                <div className="flex items-center gap-1.5">
+                                  {/* TOGGLE STATUS BUTTON */}
+                                  <button
+                                    onClick={() => {
+                                      updateEngineer(eng.id, { active: !isActive });
+                                    }}
+                                    title={isActive ? "تعطيل حساب المهندس" : "تنشيط حساب المهندس"}
+                                    className={`p-1.5 rounded-lg border text-xs transition-colors font-bold ${isActive ? 'text-amber-600 bg-amber-50 border-amber-100 hover:bg-amber-100' : 'text-emerald-600 bg-emerald-50 border-emerald-100 hover:bg-emerald-100'}`}
+                                  >
+                                    {isActive ? 'تعطيل' : 'تنشيط'}
+                                  </button>
+
+                                  {/* EDIT BUTTON */}
+                                  <button
+                                    onClick={() => {
+                                      setEditingEngineerId(eng.id);
+                                      setEditEngName(eng.name);
+                                      setEditEngEmail(eng.email);
+                                      setEditEngSpecialty(eng.specialty || '');
+                                      setEditEngPhone(eng.phone);
+                                      setEditEngActive(eng.active !== false);
+                                    }}
+                                    title="تعديل حساب المهندس"
+                                    className="p-1.5 text-gray-500 hover:text-gray-700 bg-gray-50 border border-gray-200 rounded-lg transition-all"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  {/* DELETE BUTTON */}
+                                  <button
+                                    onClick={() => {
+                                      if (confirm(`هل أنت متأكد نهائياً من حذف حساب المهندس [${eng.name}]؟`)) {
+                                        deleteEngineer(eng.id);
+                                      }
+                                    }}
+                                    title="حذف حساب المهندس"
+                                    className="p-1.5 text-red-500 hover:text-red-700 bg-red-50 border border-red-100 rounded-lg transition-all"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
                       </div>
                     )}
                   </div>

@@ -117,7 +117,9 @@ export interface Engineer {
   name: string;
   email: string;
   phone: string;
-  specialty: string;
+  specialty?: string;
+  active: boolean;
+  role: 'engineer';
   createdAt: number;
 }
 
@@ -137,6 +139,8 @@ export interface Ticket {
   assignedEngineerName?: string;
   sourceId?: string;
   sourceType?: 'design_request' | 'bedroom_submission' | 'direct';
+  requestId?: string;
+  trackingId?: string;
   attachments?: string[];
 }
 
