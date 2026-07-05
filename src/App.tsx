@@ -17,6 +17,8 @@ import { Services } from './pages/Services';
 import { RequestDesign } from './pages/RequestDesign';
 import { Contact } from './pages/Contact';
 import { TrackRequest } from './pages/TrackRequest';
+import { AIDesignAdvisor } from './pages/AIDesignAdvisor';
+import { ProjectTickets } from './pages/ProjectTickets';
 import { AdminLogin } from './pages/AdminLogin';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { MessageSquare, Phone, Sparkles } from 'lucide-react';
@@ -45,10 +47,14 @@ export default function App() {
         return <ColorLab setActiveTab={setActiveTab} />;
       case 'services':
         return <Services />;
+      case 'ai-advisor':
+        return <AIDesignAdvisor setActiveTab={setActiveTab} />;
       case 'request':
         return <RequestDesign setActiveTab={setActiveTab} />;
       case 'track':
         return <TrackRequest />;
+      case 'tickets':
+        return <ProjectTickets />;
       case 'contact':
         return <Contact />;
       case 'admin':

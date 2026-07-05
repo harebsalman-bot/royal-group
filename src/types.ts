@@ -107,3 +107,57 @@ export interface BedroomSubmission {
   adminNotes?: string;
   viewed?: boolean;
 }
+
+// ==========================================
+// ROYAL GROUP PROJECT TICKET SYSTEM TYPES
+// ==========================================
+
+export interface Engineer {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  specialty: string;
+  createdAt: number;
+}
+
+export type TicketStatus = 'open' | 'in_progress' | 'under_review' | 'closed';
+
+export interface Ticket {
+  id: string; // Automatically generated ticket ID (e.g. RG-TKT-1001)
+  clientName: string;
+  clientPhone: string;
+  clientEmail?: string;
+  title: string;
+  description: string;
+  status: TicketStatus;
+  createdAt: number;
+  updatedAt: number;
+  assignedEngineerId?: string;
+  assignedEngineerName?: string;
+  sourceId?: string;
+  sourceType?: 'design_request' | 'bedroom_submission' | 'direct';
+  attachments?: string[];
+}
+
+export interface Message {
+  id: string;
+  ticketId: string;
+  senderId: string; // 'admin' | 'client' | engineer email
+  senderName: string;
+  senderRole: 'admin' | 'client' | 'engineer';
+  content: string;
+  attachments?: { name: string; url: string; type: string }[];
+  createdAt: number;
+}
+
+export interface TicketNotification {
+  id: string;
+  ticketId: string;
+  recipientId: string; // 'admin' | 'client' | engineer email
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: number;
+}
+

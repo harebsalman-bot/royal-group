@@ -6,7 +6,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   Project, Category, ColorVariant, DesignRequest, CompanySettings, SocialLinks, BedroomOption, BedroomSubmission,
-  RequestStatus, RejectionReason
+  RequestStatus, RejectionReason, Engineer, Ticket, Message, TicketNotification, TicketStatus
 } from '../types';
 import { 
   mockProjects, mockCategories, mockColorVariants, mockCompanySettings, mockSocialLinks 
@@ -157,6 +157,10 @@ interface FirebaseStateContextType {
   socialLinks: SocialLinks;
   bedroomOptions: BedroomOption[];
   bedroomSubmissions: BedroomSubmission[];
+  engineers: Engineer[];
+  tickets: Ticket[];
+  messages: Message[];
+  notifications: TicketNotification[];
   loading: boolean;
   saveFirebaseConfig: (config: any) => Promise<boolean>;
   addProject: (proj: Omit<Project, 'id' | 'createdAt'>) => Promise<void>;
@@ -168,13 +172,21 @@ interface FirebaseStateContextType {
   updateSocialLinks: (links: SocialLinks) => Promise<void>;
   addColorVariant: (variant: Omit<ColorVariant, 'id' | 'createdAt'>) => Promise<void>;
   deleteColorVariant: (id: string) => Promise<void>;
-  uploadFile: (file: File, folder: 'projects' | 'before-after' | 'color-lab' | 'bedroom-options') => Promise<string>;
+  uploadFile: (file: File, folder: 'projects' | 'before-after' | 'color-lab' | 'bedroom-options' | 'tickets') => Promise<string>;
   addBedroomOption: (option: Omit<BedroomOption, 'id' | 'createdAt'>) => Promise<void>;
   updateBedroomOption: (id: string, option: Partial<BedroomOption>) => Promise<void>;
   deleteBedroomOption: (id: string) => Promise<void>;
   addBedroomSubmission: (sub: Omit<BedroomSubmission, 'id' | 'createdAt' | 'status'>) => Promise<BedroomSubmission>;
   updateBedroomSubmissionStatus: (id: string, status: RequestStatus, additionalFields?: Partial<BedroomSubmission>) => Promise<void>;
   deleteBedroomSubmission: (id: string) => Promise<void>;
+  addEngineer: (engineer: Omit<Engineer, 'id' | 'createdAt'>) => Promise<void>;
+  deleteEngineer: (id: string) => Promise<void>;
+  createTicket: (ticket: Omit<Ticket, 'id' | 'createdAt' | 'updatedAt' | 'status'>, attachmentFiles?: File[]) => Promise<Ticket>;
+  updateTicketStatus: (id: string, status: TicketStatus) => Promise<void>;
+  assignTicket: (id: string, engineerId: string, engineerName: string) => Promise<void>;
+  sendTicketMessage: (msg: Omit<Message, 'id' | 'createdAt'>, files?: File[]) => Promise<void>;
+  addNotification: (notification: Omit<TicketNotification, 'id' | 'createdAt' | 'read'>) => Promise<void>;
+  markNotificationAsRead: (id: string) => Promise<void>;
 }
 
 const FirebaseStateContext = createContext<FirebaseStateContextType | undefined>(undefined);
@@ -254,6 +266,10 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   const [socialLinks, setSocialLinks] = useState<SocialLinks>(mockSocialLinks);
   const [bedroomOptions, setBedroomOptions] = useState<BedroomOption[]>(initialBedroomOptions);
   const [bedroomSubmissions, setBedroomSubmissions] = useState<BedroomSubmission[]>([]);
+  const [engineers, setEngineers] = useState<Engineer[]>([]);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [notifications, setNotifications] = useState<TicketNotification[]>([]);
 
   // Check if Firebase is ready initially
   useEffect(() => {
@@ -485,6 +501,70 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
         console.error("Error syncing Social Links:", e);
       }
 
+      // Subscribe to Engineers
+      try {
+        const qEngineers = query(collection(db, 'engineers'), orderBy('createdAt', 'desc'));
+        onSnapshot(qEngineers, (snapshot) => {
+          const list: Engineer[] = [];
+          snapshot.forEach(doc => {
+            list.push(doc.data() as Engineer);
+          });
+          setEngineers(list);
+        }, (error) => {
+          console.warn("Engineers read blocked or error:", error.message);
+        });
+      } catch (e) {
+        console.error("Error subscribing to Engineers:", e);
+      }
+
+      // Subscribe to Tickets
+      try {
+        const qTickets = query(collection(db, 'tickets'), orderBy('createdAt', 'desc'));
+        onSnapshot(qTickets, (snapshot) => {
+          const list: Ticket[] = [];
+          snapshot.forEach(doc => {
+            list.push(doc.data() as Ticket);
+          });
+          setTickets(list);
+        }, (error) => {
+          console.warn("Tickets read blocked or error:", error.message);
+        });
+      } catch (e) {
+        console.error("Error subscribing to Tickets:", e);
+      }
+
+      // Subscribe to Messages (Rely on Firestore client sorting or client state)
+      try {
+        const qMessages = query(collection(db, 'messages'), orderBy('createdAt', 'asc'));
+        onSnapshot(qMessages, (snapshot) => {
+          const list: Message[] = [];
+          snapshot.forEach(doc => {
+            list.push(doc.data() as Message);
+          });
+          setMessages(list);
+        }, (error) => {
+          console.warn("Messages read blocked or error:", error.message);
+        });
+      } catch (e) {
+        console.error("Error subscribing to Messages:", e);
+      }
+
+      // Subscribe to Notifications
+      try {
+        const qNotifications = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'));
+        onSnapshot(qNotifications, (snapshot) => {
+          const list: TicketNotification[] = [];
+          snapshot.forEach(doc => {
+            list.push(doc.data() as TicketNotification);
+          });
+          setNotifications(list);
+        }, (error) => {
+          console.warn("Notifications read blocked or error:", error.message);
+        });
+      } catch (e) {
+        console.error("Error subscribing to Notifications:", e);
+      }
+
       setLoading(false);
     } catch (error) {
       console.error("Error syncing Firebase data:", error);
@@ -508,7 +588,7 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   /**
    * Universal file uploader: Converts to compressed Base64 data URL directly to save into Firestore, preventing Firebase Storage failures.
    */
-  const uploadFile = async (file: File, folder: 'projects' | 'before-after' | 'color-lab' | 'bedroom-options'): Promise<string> => {
+  const uploadFile = async (file: File, folder: 'projects' | 'before-after' | 'color-lab' | 'bedroom-options' | 'tickets'): Promise<string> => {
     try {
       // Direct compressed Base64 conversion - works perfectly on Spark plan with no Firebase Storage!
       return await compressAndConvertToBase64(file, 1000, 1000, 0.75);
@@ -593,6 +673,7 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       console.log("AUTH USER", auth?.currentUser?.email);
 
       try {
+        console.log("Object.keys(projectData)", Object.keys(projectData));
         await setDoc(doc(db, 'projects', newId), projectData);
       } catch (error) {
         console.error("PROJECT VALIDATION DATA", projectData);
@@ -635,6 +716,7 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       console.log("AUTH USER", auth?.currentUser?.email);
 
       try {
+        console.log("Object.keys(projectData)", Object.keys(projectData));
         await updateDoc(doc(db, 'projects', id), projectData);
       } catch (error) {
         console.error("PROJECT VALIDATION DATA", projectData);
@@ -1034,6 +1116,390 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  /**
+   * Project Ticket System: Auto-generate professional Ticket ID
+   */
+  const generateTicketId = async (): Promise<string> => {
+    if (isFirebaseConnected) {
+      try {
+        const db = getDb();
+        const counterRef = doc(db, 'counters', 'ticket_counter');
+        const counterSnap = await getDoc(counterRef);
+        let nextNum = 1001;
+        if (counterSnap.exists()) {
+          const data = counterSnap.data();
+          if (data && typeof data.lastNumber === 'number') {
+            nextNum = data.lastNumber + 1;
+          }
+        }
+        await setDoc(counterRef, { lastNumber: nextNum }, { merge: true });
+        return `RG-TKT-${nextNum}`;
+      } catch (e) {
+        console.error("Error generating sequential ticket ID:", e);
+      }
+    }
+    // Demo fallback
+    let maxNum = 1000;
+    tickets.forEach(t => {
+      if (t.id && t.id.startsWith('RG-TKT-')) {
+        const num = parseInt(t.id.replace('RG-TKT-', ''), 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
+    });
+    return `RG-TKT-${maxNum + 1}`;
+  };
+
+  /**
+   * Project Ticket System: Add a new engineer (Admin)
+   */
+  const addEngineer = async (engineer: Omit<Engineer, 'id' | 'createdAt'>) => {
+    const newId = `eng_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
+    const newEng: Engineer = {
+      ...engineer,
+      id: newId,
+      createdAt: Date.now()
+    };
+
+    if (isFirebaseConnected) {
+      try {
+        const db = getDb();
+        await setDoc(doc(db, 'engineers', newId), newEng);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, `engineers/${newId}`);
+      }
+    } else {
+      setEngineers(prev => [newEng, ...prev]);
+    }
+  };
+
+  /**
+   * Project Ticket System: Delete an engineer (Admin)
+   */
+  const deleteEngineer = async (id: string) => {
+    if (isFirebaseConnected) {
+      try {
+        const db = getDb();
+        await deleteDoc(doc(db, 'engineers', id));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `engineers/${id}`);
+      }
+    } else {
+      setEngineers(prev => prev.filter(e => e.id !== id));
+    }
+  };
+
+  /**
+   * Project Ticket System: Create a new support/project ticket (Admin, Client, or Automated)
+   */
+  const createTicket = async (ticket: Omit<Ticket, 'id' | 'createdAt' | 'updatedAt' | 'status'>, attachmentFiles?: File[]) => {
+    const ticketId = await generateTicketId();
+    
+    // Upload files if any
+    const attachments: string[] = [];
+    if (attachmentFiles && attachmentFiles.length > 0) {
+      for (const file of attachmentFiles) {
+        try {
+          const url = await uploadFile(file, 'tickets');
+          attachments.push(url);
+        } catch (e) {
+          console.error("Error uploading ticket attachment:", e);
+        }
+      }
+    }
+
+    const newTicket: Ticket = {
+      ...ticket,
+      id: ticketId,
+      status: 'open',
+      attachments,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+
+    if (isFirebaseConnected) {
+      try {
+        const db = getDb();
+        await setDoc(doc(db, 'tickets', ticketId), newTicket);
+        
+        // Add a system welcome message inside the private chat
+        const systemMsg: Message = {
+          id: `msg_welcome_${Date.now()}`,
+          ticketId,
+          senderId: 'admin',
+          senderName: 'إدارة رويال جروب',
+          senderRole: 'admin',
+          content: `أهلاً بك يا ${ticket.clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
+          createdAt: Date.now()
+        };
+        await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, `tickets/${ticketId}`);
+      }
+    } else {
+      setTickets(prev => [newTicket, ...prev]);
+      const systemMsg: Message = {
+        id: `msg_welcome_${Date.now()}`,
+        ticketId,
+        senderId: 'admin',
+        senderName: 'إدارة رويال جروب',
+        senderRole: 'admin',
+        content: `أهلاً بك يا ${ticket.clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
+        createdAt: Date.now()
+      };
+      setMessages(prev => [...prev, systemMsg]);
+    }
+
+    return newTicket;
+  };
+
+  /**
+   * Project Ticket System: Update Ticket Status (Open/Close/Reopen)
+   */
+  const updateTicketStatus = async (id: string, status: TicketStatus) => {
+    const updates = { status, updatedAt: Date.now() };
+    if (isFirebaseConnected) {
+      try {
+        const db = getDb();
+        await updateDoc(doc(db, 'tickets', id), updates);
+
+        // Send a system message indicating status change
+        let statusAr = 'مفتوحة';
+        if (status === 'in_progress') statusAr = 'قيد العمل والتنفيذ';
+        if (status === 'under_review') statusAr = 'قيد المراجعة الفنية والتدقيق';
+        if (status === 'closed') statusAr = 'مغلقة / تم حلها والانتهاء منها';
+
+        const systemMsg: Message = {
+          id: `msg_status_${Date.now()}`,
+          ticketId: id,
+          senderId: 'admin',
+          senderName: 'نظام رويال جروب',
+          senderRole: 'admin',
+          content: `تنبيه النظام: تم تعديل حالة التذكرة لتصبح [${statusAr}]`,
+          createdAt: Date.now()
+        };
+        await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `tickets/${id}`);
+      }
+    } else {
+      setTickets(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+      let statusAr = 'مفتوحة';
+      if (status === 'in_progress') statusAr = 'قيد العمل والتنفيذ';
+      if (status === 'under_review') statusAr = 'قيد المراجعة الفنية والتدقيق';
+      if (status === 'closed') statusAr = 'مغلقة / تم حلها والانتهاء منها';
+      const systemMsg: Message = {
+        id: `msg_status_${Date.now()}`,
+        ticketId: id,
+        senderId: 'admin',
+        senderName: 'نظام رويال جروب',
+        senderRole: 'admin',
+        content: `تنبيه النظام: تم تعديل حالة التذكرة لتصبح [${statusAr}]`,
+        createdAt: Date.now()
+      };
+      setMessages(prev => [...prev, systemMsg]);
+    }
+  };
+
+  /**
+   * Project Ticket System: Assign Ticket to Engineer (Admin)
+   */
+  const assignTicket = async (id: string, engineerId: string, engineerName: string) => {
+    const updates = {
+      assignedEngineerId: engineerId,
+      assignedEngineerName: engineerName,
+      status: 'in_progress' as TicketStatus,
+      updatedAt: Date.now()
+    };
+
+    if (isFirebaseConnected) {
+      try {
+        const db = getDb();
+        await updateDoc(doc(db, 'tickets', id), updates);
+
+        // Add system log message
+        const systemMsg: Message = {
+          id: `msg_assign_${Date.now()}`,
+          ticketId: id,
+          senderId: 'admin',
+          senderName: 'نظام رويال جروب',
+          senderRole: 'admin',
+          content: `تنبيه النظام: تم تعيين التذكرة للمهندس المصمم: [${engineerName}] ومباشرة العمل والمتابعة الفنية.`,
+          createdAt: Date.now()
+        };
+        await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
+
+        // Notify the engineer
+        const engObj = engineers.find(e => e.id === engineerId);
+        if (engObj) {
+          const notify: Omit<TicketNotification, 'id' | 'createdAt' | 'read'> = {
+            ticketId: id,
+            recipientId: engObj.email,
+            title: 'تم تعيين تذكرة جديدة لك',
+            message: `تم تكليفك بالعمل على تذكرة العميل برقم ${id}. يرجى المتابعة والبدء بالنقاش في الغرفة الخاصة.`
+          };
+          await addNotification(notify);
+        }
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `tickets/${id}`);
+      }
+    } else {
+      setTickets(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+      const systemMsg: Message = {
+        id: `msg_assign_${Date.now()}`,
+        ticketId: id,
+        senderId: 'admin',
+        senderName: 'نظام رويال جروب',
+        senderRole: 'admin',
+        content: `تنبيه النظام: تم تعيين التذكرة للمهندس المصمم: [${engineerName}] ومباشرة العمل والمتابعة الفنية.`,
+        createdAt: Date.now()
+      };
+      setMessages(prev => [...prev, systemMsg]);
+    }
+  };
+
+  /**
+   * Project Ticket System: Send a chat message (Admin / Client / Engineer)
+   */
+  const sendTicketMessage = async (msg: Omit<Message, 'id' | 'createdAt'>, files?: File[]) => {
+    const newId = `msg_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
+    
+    // Upload files if any
+    const attachmentsList: { name: string; url: string; type: string }[] = [];
+    if (files && files.length > 0) {
+      for (const f of files) {
+        try {
+          const url = await uploadFile(f, 'tickets');
+          attachmentsList.push({
+            name: f.name,
+            url,
+            type: f.type
+          });
+        } catch (e) {
+          console.error("Error uploading message file attachment:", e);
+        }
+      }
+    }
+
+    const newMsg: Message = {
+      ...msg,
+      id: newId,
+      attachments: attachmentsList.length > 0 ? attachmentsList : undefined,
+      createdAt: Date.now()
+    };
+
+    if (isFirebaseConnected) {
+      try {
+        const db = getDb();
+        await setDoc(doc(db, 'messages', newId), newMsg);
+
+        // Update the ticket's updatedAt timestamp
+        await updateDoc(doc(db, 'tickets', msg.ticketId), { updatedAt: Date.now() });
+
+        // Generate notifications for other participants
+        const ticketObj = tickets.find(t => t.id === msg.ticketId);
+        if (ticketObj) {
+          if (msg.senderRole === 'client') {
+            await addNotification({
+              ticketId: msg.ticketId,
+              recipientId: 'admin',
+              title: `رسالة جديدة من العميل في التذكرة ${msg.ticketId}`,
+              message: `${msg.senderName}: ${msg.content.substring(0, 50)}${msg.content.length > 50 ? '...' : ''}`
+            });
+            if (ticketObj.assignedEngineerId) {
+              const engObj = engineers.find(e => e.id === ticketObj.assignedEngineerId);
+              if (engObj) {
+                await addNotification({
+                  ticketId: msg.ticketId,
+                  recipientId: engObj.email,
+                  title: `رسالة جديدة من العميل في التذكرة ${msg.ticketId}`,
+                  message: `${msg.senderName}: ${msg.content.substring(0, 50)}${msg.content.length > 50 ? '...' : ''}`
+                });
+              }
+            }
+          } 
+          else if (msg.senderRole === 'admin') {
+            await addNotification({
+              ticketId: msg.ticketId,
+              recipientId: 'client',
+              title: `رسالة جديدة من الإدارة في التذكرة ${msg.ticketId}`,
+              message: `${msg.senderName}: ${msg.content.substring(0, 50)}${msg.content.length > 50 ? '...' : ''}`
+            });
+            if (ticketObj.assignedEngineerId) {
+              const engObj = engineers.find(e => e.id === ticketObj.assignedEngineerId);
+              if (engObj) {
+                await addNotification({
+                  ticketId: msg.ticketId,
+                  recipientId: engObj.email,
+                  title: `رسالة جديدة من الإدارة في التذكرة ${msg.ticketId}`,
+                  message: `${msg.senderName}: ${msg.content.substring(0, 50)}${msg.content.length > 50 ? '...' : ''}`
+                });
+              }
+            }
+          }
+          else if (msg.senderRole === 'engineer') {
+            await addNotification({
+              ticketId: msg.ticketId,
+              recipientId: 'admin',
+              title: `رسالة جديدة من المهندس المصمم في التذكرة ${msg.ticketId}`,
+              message: `${msg.senderName}: ${msg.content.substring(0, 50)}${msg.content.length > 50 ? '...' : ''}`
+            });
+            await addNotification({
+              ticketId: msg.ticketId,
+              recipientId: 'client',
+              title: `رسالة جديدة من المهندس المصمم في التذكرة ${msg.ticketId}`,
+              message: `${msg.senderName}: ${msg.content.substring(0, 50)}${msg.content.length > 50 ? '...' : ''}`
+            });
+          }
+        }
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, `messages/${newId}`);
+      }
+    } else {
+      setMessages(prev => [...prev, newMsg]);
+      setTickets(prev => prev.map(t => t.id === msg.ticketId ? { ...t, updatedAt: Date.now() } : t));
+    }
+  };
+
+  /**
+   * Project Ticket System: Add a generic notification
+   */
+  const addNotification = async (notification: Omit<TicketNotification, 'id' | 'createdAt' | 'read'>) => {
+    const newId = `notif_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
+    const newNotif: TicketNotification = {
+      ...notification,
+      id: newId,
+      read: false,
+      createdAt: Date.now()
+    };
+
+    if (isFirebaseConnected) {
+      try {
+        const db = getDb();
+        await setDoc(doc(db, 'notifications', newId), newNotif);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, `notifications/${newId}`);
+      }
+    } else {
+      setNotifications(prev => [newNotif, ...prev]);
+    }
+  };
+
+  /**
+   * Project Ticket System: Mark notification as read
+   */
+  const markNotificationAsRead = async (id: string) => {
+    if (isFirebaseConnected) {
+      try {
+        const db = getDb();
+        await updateDoc(doc(db, 'notifications', id), { read: true });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `notifications/${id}`);
+      }
+    } else {
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    }
+  };
+
   return (
     <FirebaseStateContext.Provider value={{
       isFirebaseConnected,
@@ -1045,6 +1511,10 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       socialLinks,
       bedroomOptions,
       bedroomSubmissions,
+      engineers,
+      tickets,
+      messages,
+      notifications,
       loading,
       saveFirebaseConfig,
       addProject,
@@ -1062,7 +1532,15 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       deleteBedroomOption,
       addBedroomSubmission,
       updateBedroomSubmissionStatus,
-      deleteBedroomSubmission
+      deleteBedroomSubmission,
+      addEngineer,
+      deleteEngineer,
+      createTicket,
+      updateTicketStatus,
+      assignTicket,
+      sendTicketMessage,
+      addNotification,
+      markNotificationAsRead
     }}>
       {children}
     </FirebaseStateContext.Provider>

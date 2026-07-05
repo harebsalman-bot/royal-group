@@ -12,10 +12,29 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.email == 'harebsalman@gmail.com';
     }
 
+    // Helper function to validate project schema
+    function isValidProject(data) {
+      return data.keys().hasAll(['id', 'title', 'description', 'area', 'city', 'coverImage', 'category', 'featured', 'createdAt'])
+        && data.id is string
+        && data.title is string
+        && data.description is string
+        && data.area is string
+        && data.city is string
+        && data.coverImage is string
+        && data.category is string
+        && data.featured is bool
+        && data.createdAt is int
+        && (!('beforeImage' in data) || data.beforeImage is string)
+        && (!('afterImage' in data) || data.afterImage is string)
+        && (!('images' in data) || data.images is list)
+        && (!('orderIndex' in data) || data.orderIndex is int);
+    }
+
     // PROJECTS Collection
     match /projects/{projectId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, update: if isAdmin() && isValidProject(request.resource.data);
+      allow delete: if isAdmin();
     }
 
     // CATEGORIES Collection
@@ -68,6 +87,30 @@ service cloud.firestore {
       allow get: if true;
       allow list: if isAdmin() || (request.query.limit <= 20);
       allow update, delete: if isAdmin();
+    }
+
+    // ENGINEERS Collection
+    match /engineers/{engineerId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // TICKETS Collection
+    match /tickets/{ticketId} {
+      allow create: if true;
+      allow read: if true; // Clients access single tickets by ID; engineers access assigned ones
+      allow update: if true;
+      allow delete: if isAdmin();
+    }
+
+    // MESSAGES Collection
+    match /messages/{messageId} {
+      allow read, write: if true;
+    }
+
+    // NOTIFICATIONS Collection
+    match /notifications/{notifId} {
+      allow read, write: if true;
     }
 
     // COUNTERS Collection
