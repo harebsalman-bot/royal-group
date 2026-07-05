@@ -8,7 +8,6 @@ import { useFirebaseState } from './FirestoreStateContext';
 import { Sparkles, Database, Check, AlertTriangle, X, Sliders, Code } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { testFirebaseConnection } from '../firebase';
-import firebaseConfigRaw from '../firebase-applet-config.json';
 
 interface SetupWizardProps {
   isOpen: boolean;
@@ -31,11 +30,11 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose }) => 
   const [status, setStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Prefill existing settings from environment variables or fallback config
+  // Prefill existing settings from environment variables
   useEffect(() => {
     if (isOpen) {
       try {
-        const envConfig = {
+        const config = {
           apiKey: (import.meta as any).env.VITE_FIREBASE_API_KEY || '',
           authDomain: (import.meta as any).env.VITE_FIREBASE_AUTH_DOMAIN || '',
           projectId: (import.meta as any).env.VITE_FIREBASE_PROJECT_ID || '',
@@ -43,29 +42,13 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose }) => 
           messagingSenderId: (import.meta as any).env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
           appId: (import.meta as any).env.VITE_FIREBASE_APP_ID || '',
         };
-
-        const isEnvConfigValid = 
-          envConfig.apiKey && 
-          envConfig.apiKey.trim() !== "" && 
-          envConfig.projectId && 
-          envConfig.projectId.trim() !== "";
-
-        // Dynamically get the config object (no localStorage)
-        const config = isEnvConfigValid ? envConfig : {
-          apiKey: firebaseConfigRaw.apiKey || "",
-          authDomain: firebaseConfigRaw.authDomain || "",
-          projectId: firebaseConfigRaw.projectId || "",
-          storageBucket: firebaseConfigRaw.storageBucket || "",
-          messagingSenderId: firebaseConfigRaw.messagingSenderId || "",
-          appId: firebaseConfigRaw.appId || ""
-        };
         
-        setApiKey(config.apiKey || '');
-        setAuthDomain(config.authDomain || '');
-        setProjectId(config.projectId || '');
-        setStorageBucket(config.storageBucket || '');
-        setMessagingSenderId(config.messagingSenderId || '');
-        setAppId(config.appId || '');
+        setApiKey(config.apiKey);
+        setAuthDomain(config.authDomain);
+        setProjectId(config.projectId);
+        setStorageBucket(config.storageBucket);
+        setMessagingSenderId(config.messagingSenderId);
+        setAppId(config.appId);
         setConfigText(JSON.stringify(config, null, 2));
       } catch (e) {
         console.error("Failed to load prefill config:", e);
