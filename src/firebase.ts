@@ -182,6 +182,17 @@ export function getDb(): Firestore {
   return dbInstance;
 }
 
+export function getFirebaseApp(): FirebaseApp {
+  if (!firebaseApp) {
+    throw new Error("Firebase App is not initialized.");
+  }
+  return firebaseApp;
+}
+
+export function getActiveConfig(): any {
+  return activeConfig;
+}
+
 export function getAuthService(): Auth {
   if (!authInstance) {
     throw new Error("Firebase Auth is not initialized. Please configure Firebase.");
