@@ -657,8 +657,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // 5. Subscribe to Engineers (Public, Real-time, Client-side sorted)
     try {
-      console.log("[EngineersSubscription] Subscribing to 'users' collection where role == 'engineer'");
-      const qEngineers = query(collection(db, 'users'), where('role', '==', 'engineer'));
+console.log("[EngineersSubscription] Subscribing to 'engineers' collection where role == 'engineer'");
+      const qEngineers = querycollection(db, 'engineers'), where('role', '==', 'engineer'));
       const unsub = onSnapshot(qEngineers, (snapshot) => {
         const list: Engineer[] = [];
         snapshot.forEach(docSnap => {
