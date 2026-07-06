@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { useFirebaseState } from '../components/FirestoreStateContext';
-import { getAuthService, isFirebaseReady } from '../firebase';
+import { getAuthService, isFirebaseReady, getDb } from '../firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { Lock, Mail, Eye, EyeOff, AlertCircle, Loader2, UserCheck } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -69,8 +69,8 @@ export const EngineerLogin: React.FC<EngineerLoginProps> = ({ onLoginSuccess }) 
           
           if (!eng) {
             try {
-              const { getFirestore, doc, getDoc } = await import('firebase/firestore');
-              const db = getFirestore();
+              const { doc, getDoc } = await import('firebase/firestore');
+              const db = getDb();
               const docSnap = await getDoc(doc(db, 'users', userCredential.user.uid));
               if (docSnap.exists()) {
                 const d = docSnap.data();
