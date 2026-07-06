@@ -31,6 +31,16 @@ const SECTIONS_METADATA = [
 ];
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
+  // Safety double-check to prevent unauthorized access
+  const savedRole = localStorage.getItem('royal_user_role');
+  if (savedRole !== 'admin') {
+    return (
+      <div className="min-h-screen bg-[#171714] text-red-400 flex items-center justify-center p-6 text-center font-bold" dir="rtl">
+        عذراً، ليس لديك الصلاحية للوصول إلى لوحة التحكم هذه. يرجى تسجيل الدخول كمسؤول أولاً.
+      </div>
+    );
+  }
+
   const {
     isFirebaseConnected, projects, categories, colorVariants, designRequests, 
     companySettings, socialLinks, bedroomOptions, bedroomSubmissions,
@@ -120,6 +130,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [editingEngineer, setEditingEngineer] = useState<Engineer | null>(null);
   const [engName, setEngName] = useState('');
   const [engEmail, setEngEmail] = useState('');
+  const [engPassword, setEngPassword] = useState('');
   const [engPhone, setEngPhone] = useState('');
   const [engSpecialization, setEngSpecialization] = useState('');
   const [engActive, setEngActive] = useState(true);
@@ -758,6 +769,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     setEditingEngineer(null);
     setEngName('');
     setEngEmail('');
+    setEngPassword('');
     setEngPhone('');
     setEngSpecialization('');
     setEngActive(true);
@@ -770,6 +782,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     setEditingEngineer(eng);
     setEngName(eng.name);
     setEngEmail(eng.email);
+    setEngPassword('');
     setEngPhone(eng.phone);
     setEngSpecialization(eng.specialization || eng.specialty || '');
     setEngActive(eng.active);
@@ -782,6 +795,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     e.preventDefault();
     if (!engName.trim() || !engEmail.trim() || !engPhone.trim()) {
       showFeedback('الرجاء ملء جميع حقول المهندس الأساسية (الاسم، البريد الإلكتروني، رقم الهاتف).', 'error');
+      return;
+    }
+    if (!editingEngineer && !engPassword.trim()) {
+      showFeedback('الرجاء إدخال كلمة مرور لحساب المهندس الجديد.', 'error');
       return;
     }
     try {
@@ -798,16 +815,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       };
 
       if (editingEngineer) {
+        console.log(`[handleSaveEngineer] Saving changes for existing engineer. ID: ${editingEngineer.id}, Name: ${editingEngineer.name}`);
         await updateEngineer(editingEngineer.id, engData);
         showFeedback('تم تحديث بيانات المهندس بنجاح!');
       } else {
-        await addEngineer(engData);
-        showFeedback('تم إضافة المهندس الجديد بنجاح!');
+        console.log(`[handleSaveEngineer] Initiating new engineer flow. Input email: ${engEmail.trim()}`);
+        await addEngineer(engData, engPassword.trim());
+        console.log(`[handleSaveEngineer] Engineer creation sequence fully completed (Auth + both Firestore documents written successfully)`);
+        showFeedback('تم إضافة المهندس الجديد وإنشاء حسابه بنجاح!');
       }
       resetEngineerForm();
-    } catch (err) {
-      console.error(err);
-      showFeedback('حدث خطأ أثناء حفظ بيانات المهندس.', 'error');
+    } catch (err: any) {
+      console.error("[handleSaveEngineer] Error saving engineer:", err);
+      showFeedback(err?.message || 'حدث خطأ أثناء حفظ بيانات المهندس.', 'error');
     } finally {
       setGlobalLoading(false);
     }
@@ -2345,6 +2365,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       className="w-full px-3.5 py-2.5 bg-[#20201c] border border-gray-800 text-white rounded-xl outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37] text-left"
                     />
                   </div>
+
+                  {!editingEngineer && (
+                    <div className="space-y-1.5">
+                      <label className="block text-gray-300 font-bold">كلمة المرور <span className="text-[#d4af37]">*</span>:</label>
+                      <input
+                        type="password"
+                        required
+                        placeholder="••••••••"
+                        value={engPassword}
+                        onChange={(e) => setEngPassword(e.target.value)}
+                        className="w-full px-3.5 py-2.5 bg-[#20201c] border border-gray-800 text-white rounded-xl outline-none focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37] text-left"
+                      />
+                    </div>
+                  )}
 
                   <div className="space-y-1.5">
                     <label className="block text-gray-300 font-bold">رقم الهاتف الفعال <span className="text-[#d4af37]">*</span>:</label>

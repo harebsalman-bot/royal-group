@@ -15,12 +15,13 @@ export interface TrackRequestProps {
 }
 
 export const TrackRequest: React.FC<TrackRequestProps> = ({ setActiveTab }) => {
-  const { designRequests, bedroomSubmissions, tickets } = useFirebaseState();
+  const { designRequests, bedroomSubmissions, tickets, currentUserRole, currentUserId } = useFirebaseState();
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isFreshSubmission, setIsFreshSubmission] = useState(false);
+  const [isUnauthorized, setIsUnauthorized] = useState(false);
 
   const unsubscribersRef = useRef<(() => void)[]>([]);
 
@@ -66,6 +67,7 @@ export const TrackRequest: React.FC<TrackRequestProps> = ({ setActiveTab }) => {
 
     setSearched(true);
     setLoading(true);
+    setIsUnauthorized(false);
 
     if (isFirebaseReady()) {
       try {
@@ -73,6 +75,8 @@ export const TrackRequest: React.FC<TrackRequestProps> = ({ setActiveTab }) => {
         
         let localRequests: any[] = [];
         let localBedrooms: any[] = [];
+        let unauthorizedReqs = new Set<string>();
+        let unauthorizedBeds = new Set<string>();
 
         const updateResults = () => {
           // Combine and map
@@ -111,7 +115,19 @@ export const TrackRequest: React.FC<TrackRequestProps> = ({ setActiveTab }) => {
           const uniqueResultsMap = new Map<string, any>();
           combined.forEach(item => uniqueResultsMap.set(item.id, item));
           
-          setResults(Array.from(uniqueResultsMap.values()));
+          const finalResults = Array.from(uniqueResultsMap.values());
+          setResults(finalResults);
+
+          // If we found some matching records but they are all unauthorized for the current client,
+          // flag isUnauthorized(true) and clear cached states.
+          if (finalResults.length === 0 && (unauthorizedReqs.size > 0 || unauthorizedBeds.size > 0)) {
+            setIsUnauthorized(true);
+            localStorage.removeItem('active_client_request_id');
+            localStorage.removeItem('active_client_request_num');
+          } else {
+            setIsUnauthorized(false);
+          }
+
           setLoading(false);
         };
 
@@ -126,7 +142,16 @@ export const TrackRequest: React.FC<TrackRequestProps> = ({ setActiveTab }) => {
           localRequests = localRequests.filter(r => r.requestNumber !== q);
           snap.forEach(docSnap => {
             const data = docSnap.data();
-            localRequests.push({ id: docSnap.id, ...data });
+            const docId = docSnap.id;
+            const clientId = data.clientId;
+            const isOwner = currentUserRole === 'admin' || (clientId && clientId === currentUserId);
+
+            if (isOwner) {
+              localRequests.push({ id: docId, ...data });
+              unauthorizedReqs.delete(docId);
+            } else {
+              unauthorizedReqs.add(docId);
+            }
           });
           updateResults();
         }, (err) => {
@@ -141,7 +166,16 @@ export const TrackRequest: React.FC<TrackRequestProps> = ({ setActiveTab }) => {
           localRequests = localRequests.filter(r => r.phone !== q);
           snap.forEach(docSnap => {
             const data = docSnap.data();
-            localRequests.push({ id: docSnap.id, ...data });
+            const docId = docSnap.id;
+            const clientId = data.clientId;
+            const isOwner = currentUserRole === 'admin' || (clientId && clientId === currentUserId);
+
+            if (isOwner) {
+              localRequests.push({ id: docId, ...data });
+              unauthorizedReqs.delete(docId);
+            } else {
+              unauthorizedReqs.add(docId);
+            }
           });
           updateResults();
         }, (err) => {
@@ -156,7 +190,16 @@ export const TrackRequest: React.FC<TrackRequestProps> = ({ setActiveTab }) => {
           localBedrooms = localBedrooms.filter(b => b.requestNumber !== q);
           snap.forEach(docSnap => {
             const data = docSnap.data();
-            localBedrooms.push({ id: docSnap.id, ...data });
+            const docId = docSnap.id;
+            const clientId = data.clientId;
+            const isOwner = currentUserRole === 'admin' || (clientId && clientId === currentUserId);
+
+            if (isOwner) {
+              localBedrooms.push({ id: docId, ...data });
+              unauthorizedBeds.delete(docId);
+            } else {
+              unauthorizedBeds.add(docId);
+            }
           });
           updateResults();
         }, (err) => {
@@ -171,7 +214,16 @@ export const TrackRequest: React.FC<TrackRequestProps> = ({ setActiveTab }) => {
           localBedrooms = localBedrooms.filter(b => b.clientPhone !== q);
           snap.forEach(docSnap => {
             const data = docSnap.data();
-            localBedrooms.push({ id: docSnap.id, ...data });
+            const docId = docSnap.id;
+            const clientId = data.clientId;
+            const isOwner = currentUserRole === 'admin' || (clientId && clientId === currentUserId);
+
+            if (isOwner) {
+              localBedrooms.push({ id: docId, ...data });
+              unauthorizedBeds.delete(docId);
+            } else {
+              unauthorizedBeds.add(docId);
+            }
           });
           updateResults();
         }, (err) => {
@@ -206,7 +258,27 @@ export const TrackRequest: React.FC<TrackRequestProps> = ({ setActiveTab }) => {
         return numMatch || phoneMatch || idMatch;
       });
 
-      const mappedRequests = matchedRequests.map(req => ({
+      let unauthorizedFound = false;
+
+      const filteredRequests = matchedRequests.filter(req => {
+        const isOwner = currentUserRole === 'admin' || (req.clientId && req.clientId === currentUserId);
+        if (!isOwner) {
+          unauthorizedFound = true;
+          return false;
+        }
+        return true;
+      });
+
+      const filteredBedrooms = matchedBedrooms.filter(sub => {
+        const isOwner = currentUserRole === 'admin' || (sub.clientId && sub.clientId === currentUserId);
+        if (!isOwner) {
+          unauthorizedFound = true;
+          return false;
+        }
+        return true;
+      });
+
+      const mappedRequests = filteredRequests.map(req => ({
         id: req.id,
         requestNumber: req.requestNumber || 'RG-PENDING',
         clientName: req.name,
@@ -221,7 +293,7 @@ export const TrackRequest: React.FC<TrackRequestProps> = ({ setActiveTab }) => {
         details: req
       }));
 
-      const mappedBedrooms = matchedBedrooms.map(sub => ({
+      const mappedBedrooms = filteredBedrooms.map(sub => ({
         id: sub.id,
         requestNumber: sub.requestNumber || 'RG-PENDING',
         clientName: sub.clientName,
@@ -238,6 +310,15 @@ export const TrackRequest: React.FC<TrackRequestProps> = ({ setActiveTab }) => {
 
       const combined = [...mappedRequests, ...mappedBedrooms].sort((a, b) => b.date - a.date);
       setResults(combined);
+
+      if (combined.length === 0 && unauthorizedFound) {
+        setIsUnauthorized(true);
+        localStorage.removeItem('active_client_request_id');
+        localStorage.removeItem('active_client_request_num');
+      } else {
+        setIsUnauthorized(false);
+      }
+
       setLoading(false);
     }
   };
@@ -250,6 +331,7 @@ export const TrackRequest: React.FC<TrackRequestProps> = ({ setActiveTab }) => {
     setResults([]);
     setSearched(false);
     setIsFreshSubmission(false);
+    setIsUnauthorized(false);
   };
 
   const getStatusText = (status: RequestStatus) => {
@@ -514,6 +596,19 @@ export const TrackRequest: React.FC<TrackRequestProps> = ({ setActiveTab }) => {
               <div className="bg-[#171714] border border-[#d4af37]/10 rounded-3xl p-16 text-center space-y-4">
                 <Loader2 className="w-10 h-10 text-[#d4af37] mx-auto animate-spin" />
                 <p className="text-xs text-gray-400">جاري البحث ومزامنة البيانات في الوقت الفعلي...</p>
+              </div>
+            ) : isUnauthorized ? (
+              <div className="bg-gradient-to-br from-[#1c1212] to-[#171714] border-2 border-red-500/30 rounded-3xl p-12 text-center space-y-4 relative overflow-hidden">
+                <div className="absolute -left-6 -bottom-6 w-24 h-24 text-red-500/5 pointer-events-none">
+                  <XCircle className="w-full h-full" />
+                </div>
+                <XCircle className="w-12 h-12 text-red-500 mx-auto animate-pulse" />
+                <div className="space-y-2">
+                  <h4 className="text-sm font-black text-red-400">غير مصرح بالوصول لهذا الطلب</h4>
+                  <p className="text-xs text-gray-300 max-w-sm mx-auto leading-relaxed">
+                    عذراً، هذا الطلب الملكي مسجل لعميل آخر. لا يمكنك استعراض بيانات تتبع هذا الطلب إلا باستخدام الحساب الأصلي الذي أرسل الاستمارة.
+                  </p>
+                </div>
               </div>
             ) : results.length === 0 ? (
               <div className="bg-[#171714] border border-[#d4af37]/10 rounded-3xl p-12 text-center space-y-4">

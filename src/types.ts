@@ -59,6 +59,7 @@ export interface DesignRequest {
   assignedEngineerId?: string | null;
   assignedEngineerName?: string | null;
   assignedAt?: number;
+  clientId?: string; // Stored for client data isolation
 }
 
 export interface CompanySettings {
@@ -114,6 +115,7 @@ export interface BedroomSubmission {
   assignedEngineerId?: string | null;
   assignedEngineerName?: string | null;
   assignedAt?: number;
+  clientId?: string; // Stored for client data isolation
 }
 
 // ==========================================
@@ -128,6 +130,7 @@ export interface Engineer {
   specialty?: string;
   specialization?: string; // Standardized field
   active: boolean;
+  status?: 'active' | 'disabled'; // Explicit status as requested
   role: 'engineer';
   createdAt: number;
   currentTickets?: number;
@@ -156,6 +159,7 @@ export interface Ticket {
   trackingId?: string;
   relatedRequestNumber?: string; // Compatible with legacy tickets linked to requests
   attachments?: string[];
+  clientId?: string; // Stored for client data isolation
 }
 
 export interface Message {
@@ -168,6 +172,8 @@ export interface Message {
   attachments?: { name: string; url: string; type: string }[];
   createdAt: number;
   read?: boolean;
+  clientId?: string; // Stored for client data isolation
+  assignedEngineerId?: string | null; // Stored for engineer data isolation
 }
 
 export interface TicketNotification {
@@ -178,5 +184,7 @@ export interface TicketNotification {
   message: string;
   read: boolean;
   createdAt: number;
+  clientId?: string; // Stored for client data isolation
+  assignedEngineerId?: string | null; // Stored for engineer data isolation
 }
 

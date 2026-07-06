@@ -6,7 +6,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useFirebaseState } from './FirestoreStateContext';
 import { BedroomOption, ColorVariant } from '../types';
-import { mockColorVariants } from '../data/mockData';
 import { 
   Bed, Layers, Grid, Sparkles, FolderOpen, Tv, Compass, Columns, Home, Lightbulb,
   ChevronLeft, ChevronRight, Check, CheckCircle2, Crown, Loader2, User, Phone, MapPin, Award,
@@ -122,25 +121,21 @@ export const ColorLab: React.FC<ColorLabProps> = ({ setActiveTab }) => {
   const [colorSuccessPhone, setColorSuccessPhone] = useState('');
   const [colorCopied, setColorCopied] = useState(false);
 
-  // Group and memoize materials/colors (with fallbacks to mock data)
+  // Group and memoize materials/colors
   const woods = useMemo(() => {
-    const list = colorVariants.filter(v => v.type === 'wood');
-    return list.length > 0 ? list : mockColorVariants.filter(v => v.type === 'wood');
+    return colorVariants.filter(v => v.type === 'wood');
   }, [colorVariants]);
 
   const marbles = useMemo(() => {
-    const list = colorVariants.filter(v => v.type === 'marble');
-    return list.length > 0 ? list : mockColorVariants.filter(v => v.type === 'marble');
+    return colorVariants.filter(v => v.type === 'marble');
   }, [colorVariants]);
 
   const walls = useMemo(() => {
-    const list = colorVariants.filter(v => v.type === 'wall');
-    return list.length > 0 ? list : mockColorVariants.filter(v => v.type === 'wall');
+    return colorVariants.filter(v => v.type === 'wall');
   }, [colorVariants]);
 
   const floorings = useMemo(() => {
-    const list = colorVariants.filter(v => v.type === 'flooring');
-    return list.length > 0 ? list : mockColorVariants.filter(v => v.type === 'flooring');
+    return colorVariants.filter(v => v.type === 'flooring');
   }, [colorVariants]);
 
   // Set default active colors and default image on mount / data load

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { 
   Project, Category, ColorVariant, DesignRequest, CompanySettings, SocialLinks, BedroomOption, BedroomSubmission,
   RequestStatus, RejectionReason, Engineer, Ticket, Message, TicketNotification, TicketStatus
@@ -15,7 +15,7 @@ import {
   initializeDynamicFirebase, isFirebaseReady, getDb, getAuthService, getFirebaseApp, getActiveConfig, handleFirestoreError, OperationType 
 } from '../firebase';
 import { 
-  collection, doc, getDocs, setDoc as firestoreSetDoc, updateDoc as firestoreUpdateDoc, deleteDoc, getDoc, query, orderBy, onSnapshot 
+  collection, doc, getDocs, setDoc as firestoreSetDoc, updateDoc as firestoreUpdateDoc, deleteDoc, getDoc, query, orderBy, onSnapshot, where, limit 
 } from 'firebase/firestore';
 
 // Helper to recursively remove undefined fields and values before writing to Firestore
@@ -212,7 +212,7 @@ interface FirebaseStateContextType {
   addBedroomSubmission: (sub: Omit<BedroomSubmission, 'id' | 'createdAt' | 'status'>) => Promise<BedroomSubmission>;
   updateBedroomSubmissionStatus: (id: string, status: RequestStatus, additionalFields?: Partial<BedroomSubmission>) => Promise<void>;
   deleteBedroomSubmission: (id: string) => Promise<void>;
-  addEngineer: (engineer: Omit<Engineer, 'id' | 'createdAt'>) => Promise<void>;
+  addEngineer: (engineer: Omit<Engineer, 'id' | 'createdAt'>, password?: string) => Promise<void>;
   updateEngineer: (id: string, updates: Partial<Engineer>) => Promise<void>;
   deleteEngineer: (id: string) => Promise<void>;
   createTicket: (ticket: Omit<Ticket, 'id' | 'createdAt' | 'updatedAt' | 'status'>, attachmentFiles?: File[]) => Promise<Ticket>;
@@ -224,6 +224,10 @@ interface FirebaseStateContextType {
   markNotificationAsRead: (id: string) => Promise<void>;
   findOrCreateTicketByTrackingOrPhone: (queryStr: string) => Promise<Ticket | null>;
   deleteTicket: (id: string) => Promise<void>;
+  refreshUserSession?: () => void;
+  currentUserRole: 'client' | 'engineer' | 'admin';
+  currentUserId: string | null;
+  logout: () => Promise<void>;
 }
 
 const FirebaseStateContext = createContext<FirebaseStateContextType | undefined>(undefined);
@@ -290,64 +294,219 @@ const compressAndConvertToBase64 = (file: File, maxWidth: number = 1000, maxHeig
   });
 };
 
-export const seedDefaultEngineers = (): Engineer[] => {
-  return [
-    {
-      id: "eng_ali",
-      name: "علي الكرخي",
-      email: "ali@royalgroup.iq",
-      phone: "07701112223",
-      specialty: "تصميم داخلي وديكور كلاسيكي",
-      specialization: "تصميم داخلي وديكور كلاسيكي",
-      active: true,
-      role: "engineer",
-      createdAt: 1719705600000,
-      currentTickets: 0,
-      currentProjects: 0
-    },
-    {
-      id: "eng_dina",
-      name: "دينا التميمي",
-      email: "dina@royalgroup.iq",
-      phone: "07704445556",
-      specialty: "تصميم مودرن وغرف نوم فاخرة",
-      specialization: "تصميم مودرن وغرف نوم فاخرة",
-      active: true,
-      role: "engineer",
-      createdAt: 1719792000000,
-      currentTickets: 0,
-      currentProjects: 0
-    },
-    {
-      id: "eng_mustafa",
-      name: "مصطفى العبيدي",
-      email: "mustafa@royalgroup.iq",
-      phone: "07707778889",
-      specialty: "مطابخ ذكية وأنظمة إضاءة",
-      specialization: "مطابخ ذكية وأنظمة إضاءة",
-      active: true,
-      role: "engineer",
-      createdAt: 1719878400000,
-      currentTickets: 0,
-      currentProjects: 0
-    }
-  ];
-};
-
 export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
-  
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const hasSubscribedOnce = useRef<boolean>(false);
+
+  // Dynamic User Session for Data Isolation
+  // Start role as 'client' with no active ID initially to prevent rendering Admin UI before auth check finishes.
+  const [currentUserRole, setCurrentUserRole] = useState<'client' | 'engineer' | 'admin'>('client');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Listen to Firebase Auth state changes as the single source of truth
+  useEffect(() => {
+    if (!isFirebaseConnected) {
+      return;
+    }
+
+    let unsubscribeAuth: (() => void) | null = null;
+    let isMounted = true;
+
+    const setupAuthListener = async () => {
+      try {
+        const { onAuthStateChanged } = await import('firebase/auth');
+        const auth = getAuthService();
+
+        unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+          if (!isMounted) return;
+          console.log("[AuthListener] onAuthStateChanged fired. Current Firebase User:", user ? user.email : "None");
+          console.log("[Auth] auth initialized");
+
+          let resolvedRole: 'client' | 'engineer' | 'admin' = 'client';
+          let resolvedUserId: string | null = null;
+
+          if (user) {
+            const email = user.email?.toLowerCase();
+            if (email === 'harebsalman@gmail.com') {
+              console.log("[AuthListener] Valid authenticated Admin session confirmed:", email);
+              localStorage.setItem('royal_user_role', 'admin');
+              resolvedRole = 'admin';
+              resolvedUserId = 'admin';
+            } else {
+              // Check if they are an engineer or client
+              const savedRole = localStorage.getItem('royal_user_role');
+              if (savedRole === 'engineer') {
+                resolvedRole = 'engineer';
+                const savedUserJson = localStorage.getItem('royal_logged_in_user');
+                if (savedUserJson) {
+                  try {
+                    const u = JSON.parse(savedUserJson);
+                    if (u && u.id) resolvedUserId = u.id;
+                  } catch (e) {}
+                }
+                if (!resolvedUserId) {
+                  resolvedUserId = user.uid;
+                }
+              } else {
+                // Try fetching user record directly from database
+                try {
+                  const db = getDb();
+                  const docSnap = await getDoc(doc(db, 'users', user.uid));
+                  if (docSnap.exists() && docSnap.data().role === 'engineer') {
+                    console.log("[AuthListener] Valid authenticated Engineer session confirmed from DB:", email);
+                    resolvedRole = 'engineer';
+                    resolvedUserId = user.uid;
+                    localStorage.setItem('royal_user_role', 'engineer');
+                    localStorage.setItem('royal_logged_in_user', JSON.stringify({
+                      id: user.uid,
+                      email: user.email,
+                      role: 'engineer',
+                      ...docSnap.data()
+                    }));
+                  } else {
+                    console.log("[AuthListener] Valid session confirmed (Client):", email);
+                    resolvedRole = 'client';
+                    let cid = localStorage.getItem('royal_client_uid');
+                    if (!cid) {
+                      cid = `client_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`;
+                      localStorage.setItem('royal_client_uid', cid);
+                    }
+                    resolvedUserId = cid;
+                  }
+                } catch (dbErr) {
+                  console.log("[AuthListener] Direct DB check failed, falling back to local storage:", dbErr);
+                  if (savedRole === 'engineer') {
+                    resolvedRole = 'engineer';
+                    const savedUserJson = localStorage.getItem('royal_logged_in_user');
+                    if (savedUserJson) {
+                      try {
+                        const u = JSON.parse(savedUserJson);
+                        if (u && u.id) resolvedUserId = u.id;
+                      } catch (e) {}
+                    }
+                    if (!resolvedUserId) resolvedUserId = user.uid;
+                  } else {
+                    resolvedRole = 'client';
+                    let cid = localStorage.getItem('royal_client_uid');
+                    if (!cid) {
+                      cid = `client_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`;
+                      localStorage.setItem('royal_client_uid', cid);
+                    }
+                    resolvedUserId = cid;
+                  }
+                }
+              }
+            }
+          } else {
+            console.log("[AuthListener] No active Firebase Auth session. Rejecting / clearing any stale role state.");
+            localStorage.removeItem('royal_user_role');
+            localStorage.removeItem('royal_logged_in_user');
+            resolvedRole = 'client';
+            
+            let cid = localStorage.getItem('royal_client_uid');
+            if (!cid) {
+              cid = `client_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`;
+              localStorage.setItem('royal_client_uid', cid);
+            }
+            resolvedUserId = cid;
+          }
+
+          setCurrentUserRole(resolvedRole);
+          setCurrentUserId(resolvedUserId);
+          setIsAuthLoading(false);
+          console.log(`[Auth] role resolved: ${resolvedRole}`);
+        });
+      } catch (e) {
+        console.error("[AuthListener] Error importing/setting up onAuthStateChanged:", e);
+        setIsAuthLoading(false);
+      }
+    };
+
+    setupAuthListener();
+
+    return () => {
+      isMounted = false;
+      if (unsubscribeAuth) unsubscribeAuth();
+    };
+  }, [isFirebaseConnected]);
+
+  const refreshUserSession = () => {
+    const savedRole = localStorage.getItem('royal_user_role') as 'client' | 'engineer' | 'admin' | null;
+    const savedUserJson = localStorage.getItem('royal_logged_in_user');
+    
+    let role: 'client' | 'engineer' | 'admin' = 'client';
+    let uid: string | null = null;
+    
+    if (savedRole === 'admin') {
+      role = 'admin';
+      uid = 'admin';
+    } else if (savedRole === 'engineer') {
+      role = 'engineer';
+      if (savedUserJson) {
+        try {
+          const u = JSON.parse(savedUserJson);
+          if (u && u.id) uid = u.id;
+        } catch (e) {}
+      }
+    } else {
+      role = 'client';
+      uid = localStorage.getItem('royal_client_uid');
+      if (!uid) {
+        uid = `client_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`;
+        localStorage.setItem('royal_client_uid', uid);
+      }
+    }
+    
+    setCurrentUserRole(role);
+    setCurrentUserId(uid);
+    console.log(`[FirestoreSession] Session refreshed: role=${role}, uid=${uid}`);
+    console.log(`[Auth] role resolved: ${role}`);
+  };
+
+  // Centralized robust logout execution
+  const logout = async () => {
+    console.log("[Auth] Logout execution initiated.");
+    
+    // Clear all local storage role and user states
+    localStorage.removeItem('royal_user_role');
+    localStorage.removeItem('royal_logged_in_user');
+    
+    // Generate fresh clean client ID for the guest state
+    const newCid = `client_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`;
+    localStorage.setItem('royal_client_uid', newCid);
+    
+    // Sign out from Firebase Auth if connected
+    if (isFirebaseConnected && isFirebaseReady()) {
+      try {
+        const { getAuth, signOut } = await import('firebase/auth');
+        const auth = getAuth();
+        await signOut(auth);
+        console.log("[Auth] Firebase Auth signOut successful.");
+      } catch (err) {
+        console.error("[Auth] Error during Firebase Auth signOut:", err);
+      }
+    }
+    
+    // Reset React state
+    setCurrentUserRole('client');
+    setCurrentUserId(newCid);
+    
+    console.log("[Auth] Logout execution completed successfully. Reloading page...");
+    window.location.reload();
+  };
+
   // App states
-  const [projects, setProjects] = useState<Project[]>(mockProjects);
-  const [categories, setCategories] = useState<Category[]>(mockCategories);
-  const [colorVariants, setColorVariants] = useState<ColorVariant[]>(mockColorVariants);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [colorVariants, setColorVariants] = useState<ColorVariant[]>([]);
   const [designRequests, setDesignRequests] = useState<DesignRequest[]>([]);
   const [companySettings, setCompanySettings] = useState<CompanySettings>(mockCompanySettings);
   const [socialLinks, setSocialLinks] = useState<SocialLinks>(mockSocialLinks);
-  const [bedroomOptions, setBedroomOptions] = useState<BedroomOption[]>(initialBedroomOptions);
+  const [bedroomOptions, setBedroomOptions] = useState<BedroomOption[]>([]);
   const [bedroomSubmissions, setBedroomSubmissions] = useState<BedroomSubmission[]>([]);
-  const [engineers, setEngineers] = useState<Engineer[]>(seedDefaultEngineers());
+  const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [notifications, setNotifications] = useState<TicketNotification[]>([]);
@@ -355,11 +514,43 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   // Check if Firebase is ready initially
   useEffect(() => {
     const checkInit = async () => {
+      console.log("[AuthInit] Initializing application auth bootstrap check...");
       if (isFirebaseReady()) {
+        console.log("[AuthInit] Firebase is configured and ready. Setting isFirebaseConnected to true.");
         setIsFirebaseConnected(true);
         await syncDataFromFirebase();
       } else {
+        console.log("[AuthInit] Firebase is NOT configured. Operating in high-fidelity local demo mode.");
+        // Restoring local storage session immediately for demo mode
+        const savedRole = localStorage.getItem('royal_user_role') as 'client' | 'engineer' | 'admin' | null;
+        const role = savedRole || 'client';
+        setCurrentUserRole(role);
+        console.log("[AuthInit] Restored local demo role:", role);
+
+        let uid: string | null = null;
+        if (role === 'admin') {
+          uid = 'admin';
+        } else if (role === 'engineer') {
+          const savedUserJson = localStorage.getItem('royal_logged_in_user');
+          if (savedUserJson) {
+            try {
+              const u = JSON.parse(savedUserJson);
+              if (u && u.id) uid = u.id;
+            } catch (e) {}
+          }
+        }
+        if (!uid) {
+          uid = localStorage.getItem('royal_client_uid');
+          if (!uid) {
+            uid = `client_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`;
+            localStorage.setItem('royal_client_uid', uid);
+          }
+        }
+        setCurrentUserId(uid);
+        console.log("[AuthInit] Restored local demo uid:", uid);
+
         setLoading(false);
+        setIsAuthLoading(false);
       }
     };
     checkInit();
@@ -368,302 +559,339 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   const syncDataFromFirebase = async () => {
     try {
       setLoading(true);
-      const db = getDb();
-
-      // 1. Subscribe and Seed Categories
-      try {
-        const categoriesSnap = await getDocs(collection(db, 'categories'));
-        if (categoriesSnap.empty) {
-          for (const cat of mockCategories) {
-            await setDoc(doc(db, 'categories', cat.id), cat);
-          }
-          setCategories(mockCategories);
-        } else {
-          const catList: Category[] = [];
-          categoriesSnap.forEach(doc => catList.push(doc.data() as Category));
-          setCategories(catList);
-        }
-      } catch (e) {
-        console.error("Error syncing Categories:", e);
-      }
-
-      // 2. Check and Seed Projects
-      try {
-        const projectsSnap = await getDocs(collection(db, 'projects'));
-        if (projectsSnap.empty) {
-          for (const proj of mockProjects) {
-            await setDoc(doc(db, 'projects', proj.id), proj);
-          }
-        }
-      } catch (e) {
-        console.error("Error syncing Projects:", e);
-      }
-
-      // 3. Check and Seed Color Variants
-      try {
-        const colorsSnap = await getDocs(collection(db, 'colorVariants'));
-        if (colorsSnap.empty) {
-          for (const col of mockColorVariants) {
-            await setDoc(doc(db, 'colorVariants', col.id), col);
-          }
-        }
-      } catch (e) {
-        console.error("Error syncing Color Variants:", e);
-      }
-
-      // 4. Check and Seed Project Images Collection
-      try {
-        const projectImagesSnap = await getDocs(collection(db, 'projectImages'));
-        if (projectImagesSnap.empty) {
-          await setDoc(doc(db, 'projectImages', 'placeholder_init'), {
-            id: 'placeholder_init',
-            title: 'Royal Group Default Concept',
-            url: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
-            createdAt: Date.now()
-          });
-        }
-      } catch (e) {
-        console.error("Error syncing Project Images:", e);
-      }
-
-      // 5. Check and Seed Design Requests Collection
-      try {
-        const requestsSnap = await getDocs(collection(db, 'designRequests'));
-        if (requestsSnap.empty) {
-          await setDoc(doc(db, 'designRequests', 'placeholder_init'), {
-            id: 'placeholder_init',
-            name: 'بوابة رويال جروب',
-            phone: '+9647700000000',
-            city: 'بغداد',
-            projectType: 'residential',
-            area: '250',
-            budget: 'medium',
-            status: 'reviewed',
-            createdAt: Date.now()
-          });
-        }
-      } catch (e) {
-        console.warn("Could not check/seed Design Requests (expected for public guest users):", e);
-      }
-
-      // Subscribe to Projects
-      try {
-        const qProjects = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
-        const unsubscribeProjects = onSnapshot(qProjects, (snapshot) => {
-          const projList: Project[] = [];
-          snapshot.forEach(doc => {
-            projList.push(doc.data() as Project);
-          });
-          if (projList.length > 0) {
-            setProjects(projList);
-          } else {
-            setProjects([]);
-          }
-        }, (error) => {
-          handleFirestoreError(error, OperationType.LIST, 'projects');
-        });
-      } catch (e) {
-        console.error("Error subscribing to Projects:", e);
-      }
-
-      // Subscribe to Color Variants
-      try {
-        const qColors = query(collection(db, 'colorVariants'), orderBy('createdAt', 'desc'));
-        const unsubscribeColors = onSnapshot(qColors, (snapshot) => {
-          const colorList: ColorVariant[] = [];
-          snapshot.forEach(doc => {
-            colorList.push(doc.data() as ColorVariant);
-          });
-          setColorVariants(colorList);
-        }, (error) => {
-          handleFirestoreError(error, OperationType.LIST, 'colorVariants');
-        });
-      } catch (e) {
-        console.error("Error subscribing to Color Variants:", e);
-      }
-
-      // Subscribe to Design Requests
-      try {
-        const qRequests = query(collection(db, 'designRequests'), orderBy('createdAt', 'desc'));
-        const unsubscribeRequests = onSnapshot(qRequests, (snapshot) => {
-          const reqList: DesignRequest[] = [];
-          snapshot.forEach(doc => {
-            reqList.push(doc.data() as DesignRequest);
-          });
-          setDesignRequests(reqList);
-        }, (error) => {
-          // Safe to ignore if permissions block normal users, admins will succeed
-          console.warn("Requests read blocked for normal user (which is correct by design).");
-        });
-      } catch (e) {
-        console.error("Error subscribing to Design Requests:", e);
-      }
-
-      // 6. Check and Seed Bedroom Options
-      try {
-        const bedroomOptionsSnap = await getDocs(collection(db, 'bedroomOptions'));
-        if (bedroomOptionsSnap.empty) {
-          for (const item of seedBedroomOptions) {
-            const newId = `bedopt_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
-            const newOpt: BedroomOption = {
-              ...item,
-              id: newId,
-              createdAt: Date.now()
-            };
-            await setDoc(doc(db, 'bedroomOptions', newId), newOpt);
-          }
-        }
-      } catch (e) {
-        console.error("Error seeding Bedroom Options:", e);
-      }
-
-      // Subscribe to Bedroom Options
-      try {
-        const qBedroomOptions = query(collection(db, 'bedroomOptions'), orderBy('createdAt', 'desc'));
-        const unsubscribeBedroomOptions = onSnapshot(qBedroomOptions, (snapshot) => {
-          const list: BedroomOption[] = [];
-          snapshot.forEach(doc => {
-            list.push(doc.data() as BedroomOption);
-          });
-          if (list.length > 0) {
-            setBedroomOptions(list);
-          } else {
-            setBedroomOptions([]);
-          }
-        }, (error) => {
-          handleFirestoreError(error, OperationType.LIST, 'bedroomOptions');
-        });
-      } catch (e) {
-        console.error("Error subscribing to Bedroom Options:", e);
-      }
-
-      // Subscribe to Bedroom Submissions
-      try {
-        const qBedroomSubmissions = query(collection(db, 'bedroomSubmissions'), orderBy('createdAt', 'desc'));
-        const unsubscribeBedroomSubmissions = onSnapshot(qBedroomSubmissions, (snapshot) => {
-          const list: BedroomSubmission[] = [];
-          snapshot.forEach(doc => {
-            list.push(doc.data() as BedroomSubmission);
-          });
-          setBedroomSubmissions(list);
-        }, (error) => {
-          // Safe to ignore if permissions block normal users, admins will succeed
-          console.warn("Submissions read blocked for normal user (which is correct by design).");
-        });
-      } catch (e) {
-        console.error("Error subscribing to Bedroom Submissions:", e);
-      }
-
-      // Fetch Company Settings (Single Document)
-      try {
-        const settingsDocRef = doc(db, 'companySettings', 'main');
-        const settingsSnap = await getDoc(settingsDocRef);
-        if (settingsSnap.exists()) {
-          setCompanySettings(settingsSnap.data() as CompanySettings);
-        } else {
-          await setDoc(settingsDocRef, mockCompanySettings);
-          setCompanySettings(mockCompanySettings);
-        }
-      } catch (e) {
-        console.error("Error syncing Company Settings:", e);
-      }
-
-      // Fetch Social Links (Single Document)
-      try {
-        const socialDocRef = doc(db, 'socialLinks', 'main');
-        const socialSnap = await getDoc(socialDocRef);
-        if (socialSnap.exists()) {
-          setSocialLinks(socialSnap.data() as SocialLinks);
-        } else {
-          await setDoc(socialDocRef, mockSocialLinks);
-          setSocialLinks(mockSocialLinks);
-        }
-      } catch (e) {
-        console.error("Error syncing Social Links:", e);
-      }
-
-      // Subscribe to Engineers
-      try {
-        const qEngineers = query(collection(db, 'engineers'), orderBy('createdAt', 'desc'));
-        onSnapshot(qEngineers, async (snapshot) => {
-          const list: Engineer[] = [];
-          snapshot.forEach(doc => {
-            list.push(doc.data() as Engineer);
-          });
-          if (list.length > 0) {
-            setEngineers(list);
-          } else {
-            // Seed default engineers into Firestore
-            try {
-              const defaults = seedDefaultEngineers();
-              for (const eng of defaults) {
-                await setDoc(doc(db, 'engineers', eng.id), eng);
-              }
-            } catch (seedErr) {
-              console.error("Failed to seed default engineers into Firestore:", seedErr);
-            }
-          }
-        }, (error) => {
-          console.warn("Engineers read blocked or error:", error.message);
-        });
-      } catch (e) {
-        console.error("Error subscribing to Engineers:", e);
-      }
-
-      // Subscribe to Tickets
-      try {
-        const qTickets = query(collection(db, 'tickets'), orderBy('createdAt', 'desc'));
-        onSnapshot(qTickets, (snapshot) => {
-          const list: Ticket[] = [];
-          snapshot.forEach(doc => {
-            list.push(doc.data() as Ticket);
-          });
-          setTickets(list);
-        }, (error) => {
-          console.warn("Tickets read blocked or error:", error.message);
-        });
-      } catch (e) {
-        console.error("Error subscribing to Tickets:", e);
-      }
-
-      // Subscribe to Messages (Rely on Firestore client sorting or client state)
-      try {
-        const qMessages = query(collection(db, 'messages'), orderBy('createdAt', 'asc'));
-        onSnapshot(qMessages, (snapshot) => {
-          const list: Message[] = [];
-          snapshot.forEach(doc => {
-            list.push(doc.data() as Message);
-          });
-          setMessages(list);
-        }, (error) => {
-          console.warn("Messages read blocked or error:", error.message);
-        });
-      } catch (e) {
-        console.error("Error subscribing to Messages:", e);
-      }
-
-      // Subscribe to Notifications
-      try {
-        const qNotifications = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'));
-        onSnapshot(qNotifications, (snapshot) => {
-          const list: TicketNotification[] = [];
-          snapshot.forEach(doc => {
-            list.push(doc.data() as TicketNotification);
-          });
-          setNotifications(list);
-        }, (error) => {
-          console.warn("Notifications read blocked or error:", error.message);
-        });
-      } catch (e) {
-        console.error("Error subscribing to Notifications:", e);
-      }
-
-      setLoading(false);
+      // Give Firestore listeners a fraction of a second to start loading initial cached values
+      setTimeout(() => {
+        setLoading(false);
+      }, 100);
     } catch (error) {
-      console.error("Error syncing Firebase data:", error);
+      console.error("Error starting real-time sync loader:", error);
       setLoading(false);
     }
   };
+
+  // Dynamic Real-Time Subscriptions with Query-Level Data Isolation
+  useEffect(() => {
+    if (!isFirebaseConnected) return;
+    if (isAuthLoading) {
+      console.log("[FirestoreSecurity] Deferring subscriptions until Auth state has loaded and role resolution is complete.");
+      return;
+    }
+
+    if (!hasSubscribedOnce.current) {
+      console.log("[Subscription] subscriptions started");
+      hasSubscribedOnce.current = true;
+    } else {
+      console.log("[Subscription] subscriptions restarted");
+    }
+
+    console.log(`[FirestoreSecurity] Rebuilding dynamic isolated subscriptions: role=${currentUserRole}, uid=${currentUserId}`);
+    const db = getDb();
+    const unsubscribes: (() => void)[] = [];
+
+    // 1. Subscribe to Categories (Public, Real-time)
+    try {
+      const unsub = onSnapshot(collection(db, 'categories'), (snapshot) => {
+        const catList: Category[] = [];
+        snapshot.forEach(docSnap => {
+          catList.push(docSnap.data() as Category);
+        });
+        setCategories(catList);
+      }, (error) => {
+        console.warn("Categories subscription error:", error.message);
+      });
+      unsubscribes.push(unsub);
+    } catch (e) {
+      console.error("Error setting up Categories subscription:", e);
+    }
+
+    // 2. Subscribe to Projects (Public, Real-time, Ordered)
+    try {
+      const qProjects = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
+      const unsub = onSnapshot(qProjects, (snapshot) => {
+        const projList: Project[] = [];
+        snapshot.forEach(docSnap => {
+          projList.push(docSnap.data() as Project);
+        });
+        setProjects(projList);
+      }, (error) => {
+        console.warn("Projects subscription error:", error.message);
+      });
+      unsubscribes.push(unsub);
+    } catch (e) {
+      console.error("Error setting up Projects subscription:", e);
+    }
+
+    // 3. Subscribe to Color Variants (Public, Real-time, Ordered)
+    try {
+      const qColors = query(collection(db, 'colorVariants'), orderBy('createdAt', 'desc'));
+      const unsub = onSnapshot(qColors, (snapshot) => {
+        const colorList: ColorVariant[] = [];
+        snapshot.forEach(docSnap => {
+          colorList.push(docSnap.data() as ColorVariant);
+        });
+        setColorVariants(colorList);
+      }, (error) => {
+        console.warn("ColorVariants subscription error:", error.message);
+      });
+      unsubscribes.push(unsub);
+    } catch (e) {
+      console.error("Error setting up ColorVariants subscription:", e);
+    }
+
+    // 4. Subscribe to Bedroom Options (Public, Real-time, Ordered)
+    try {
+      const qBedroomOptions = query(collection(db, 'bedroomOptions'), orderBy('createdAt', 'desc'));
+      const unsub = onSnapshot(qBedroomOptions, (snapshot) => {
+        const list: BedroomOption[] = [];
+        snapshot.forEach(docSnap => {
+          list.push(docSnap.data() as BedroomOption);
+        });
+        setBedroomOptions(list);
+      }, (error) => {
+        console.warn("BedroomOptions subscription error:", error.message);
+      });
+      unsubscribes.push(unsub);
+    } catch (e) {
+      console.error("Error setting up BedroomOptions subscription:", e);
+    }
+
+    // 5. Subscribe to Engineers (Public, Real-time, Client-side sorted)
+    try {
+      console.log("[EngineersSubscription] Subscribing to 'users' collection where role == 'engineer'");
+      const qEngineers = query(collection(db, 'users'), where('role', '==', 'engineer'));
+      const unsub = onSnapshot(qEngineers, (snapshot) => {
+        const list: Engineer[] = [];
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          list.push({
+            id: docSnap.id,
+            name: data.name || '',
+            email: data.email || '',
+            phone: data.phone || '',
+            specialty: data.specialty || data.specialization || '',
+            specialization: data.specialization || data.specialty || '',
+            active: data.active !== false && data.status !== 'disabled',
+            status: data.status || (data.active !== false ? 'active' : 'disabled'),
+            role: 'engineer',
+            createdAt: data.createdAt || 0,
+            currentTickets: data.currentTickets || 0,
+            currentProjects: data.currentProjects || 0,
+          } as Engineer);
+        });
+
+        // Client-side sort descending by createdAt
+        list.sort((a, b) => b.createdAt - a.createdAt);
+
+        console.log(`[EngineersSubscription] SUCCESSFUL SYNC FROM COLLECTION: 'users'`);
+        console.log(`- Number of engineers loaded: ${list.length}`);
+        console.log(`- Engineer IDs returned: ${JSON.stringify(list.map(e => e.id))}`);
+        list.forEach(e => {
+          console.log(`  * Document path: users/${e.id}`);
+        });
+
+        setEngineers(list);
+      }, (error) => {
+        console.warn("[EngineersSubscription] Subscription restricted/deferred for this role (clients/guests lack directory read access). Details:", error.message);
+        setEngineers([]);
+      });
+      unsubscribes.push(unsub);
+    } catch (e) {
+      console.warn("[EngineersSubscription] Error setting up Engineers subscription:", e);
+    }
+
+    // 6. Subscribe to Company Settings (Single Document, Real-time with auto-seed fallback)
+    try {
+      const unsub = onSnapshot(doc(db, 'companySettings', 'main'), async (snapshot) => {
+        if (snapshot.exists()) {
+          setCompanySettings(snapshot.data() as CompanySettings);
+        } else {
+          try {
+            await setDoc(doc(db, 'companySettings', 'main'), mockCompanySettings);
+          } catch (e) {
+            console.error("Error auto-seeding company settings in snapshot:", e);
+          }
+        }
+      }, (error) => {
+        console.warn("CompanySettings subscription error:", error.message);
+      });
+      unsubscribes.push(unsub);
+    } catch (e) {
+      console.error("Error setting up CompanySettings subscription:", e);
+    }
+
+    // 7. Subscribe to Social Links (Single Document, Real-time with auto-seed fallback)
+    try {
+      const unsub = onSnapshot(doc(db, 'socialLinks', 'main'), async (snapshot) => {
+        if (snapshot.exists()) {
+          setSocialLinks(snapshot.data() as SocialLinks);
+        } else {
+          try {
+            await setDoc(doc(db, 'socialLinks', 'main'), mockSocialLinks);
+          } catch (e) {
+            console.error("Error auto-seeding social links in snapshot:", e);
+          }
+        }
+      }, (error) => {
+        console.warn("SocialLinks subscription error:", error.message);
+      });
+      unsubscribes.push(unsub);
+    } catch (e) {
+      console.error("Error setting up SocialLinks subscription:", e);
+    }
+
+    // 8. Subscribe to Design Requests
+    try {
+      let qRequests;
+      if (currentUserRole === 'admin') {
+        qRequests = query(collection(db, 'designRequests'));
+      } else if (currentUserRole === 'engineer') {
+        qRequests = query(collection(db, 'designRequests'), where('assignedEngineerId', '==', currentUserId));
+      } else {
+        // Client data isolation - only their requests
+        qRequests = query(collection(db, 'designRequests'), where('clientId', '==', currentUserId));
+      }
+
+      const unsub = onSnapshot(qRequests, (snapshot) => {
+        const reqList: DesignRequest[] = [];
+        snapshot.forEach(docSnap => {
+          reqList.push(docSnap.data() as DesignRequest);
+        });
+        // Sort on client side to avoid Firestore composite index requirements
+        reqList.sort((a, b) => b.createdAt - a.createdAt);
+        setDesignRequests(reqList);
+      }, (error) => {
+        console.warn("DesignRequests isolated read error/blocked:", error.message);
+      });
+      unsubscribes.push(unsub);
+    } catch (e) {
+      console.error("Error setting up isolated DesignRequests subscription:", e);
+    }
+
+    // 9. Subscribe to Bedroom Submissions
+    try {
+      let qSubmissions;
+      if (currentUserRole === 'admin') {
+        qSubmissions = query(collection(db, 'bedroomSubmissions'));
+      } else if (currentUserRole === 'engineer') {
+        qSubmissions = query(collection(db, 'bedroomSubmissions'), where('assignedEngineerId', '==', currentUserId));
+      } else {
+        // Client data isolation - only their submissions
+        qSubmissions = query(collection(db, 'bedroomSubmissions'), where('clientId', '==', currentUserId));
+      }
+
+      const unsub = onSnapshot(qSubmissions, (snapshot) => {
+        const list: BedroomSubmission[] = [];
+        snapshot.forEach(docSnap => {
+          list.push(docSnap.data() as BedroomSubmission);
+        });
+        // Sort on client side
+        list.sort((a, b) => b.createdAt - a.createdAt);
+        setBedroomSubmissions(list);
+      }, (error) => {
+        console.warn("BedroomSubmissions isolated read error/blocked:", error.message);
+      });
+      unsubscribes.push(unsub);
+    } catch (e) {
+      console.error("Error setting up isolated BedroomSubmissions subscription:", e);
+    }
+
+    // 10. Subscribe to Tickets
+    try {
+      let qTickets;
+      if (currentUserRole === 'admin') {
+        qTickets = query(collection(db, 'tickets'));
+      } else if (currentUserRole === 'engineer') {
+        qTickets = query(collection(db, 'tickets'), where('assignedEngineerId', '==', currentUserId));
+      } else {
+        // Client data isolation - only their tickets
+        qTickets = query(collection(db, 'tickets'), where('clientId', '==', currentUserId));
+      }
+
+      const unsub = onSnapshot(qTickets, (snapshot) => {
+        const list: Ticket[] = [];
+        snapshot.forEach(docSnap => {
+          list.push(docSnap.data() as Ticket);
+        });
+        // Sort on client side
+        list.sort((a, b) => b.createdAt - a.createdAt);
+        setTickets(list);
+      }, (error) => {
+        console.warn("Tickets isolated read error/blocked:", error.message);
+      });
+      unsubscribes.push(unsub);
+    } catch (e) {
+      console.error("Error setting up isolated Tickets subscription:", e);
+    }
+
+    // 11. Subscribe to Messages
+    try {
+      let qMessages;
+      if (currentUserRole === 'admin') {
+        qMessages = query(collection(db, 'messages'));
+      } else if (currentUserRole === 'engineer') {
+        qMessages = query(collection(db, 'messages'), where('assignedEngineerId', '==', currentUserId));
+      } else {
+        // Client data isolation - only messages from their tickets
+        qMessages = query(collection(db, 'messages'), where('clientId', '==', currentUserId));
+      }
+
+      const unsub = onSnapshot(qMessages, (snapshot) => {
+        const list: Message[] = [];
+        snapshot.forEach(docSnap => {
+          list.push(docSnap.data() as Message);
+        });
+        // Sort ascending for chat stream
+        list.sort((a, b) => a.createdAt - b.createdAt);
+        setMessages(list);
+      }, (error) => {
+        console.warn("Messages isolated read error/blocked:", error.message);
+      });
+      unsubscribes.push(unsub);
+    } catch (e) {
+      console.error("Error setting up isolated Messages subscription:", e);
+    }
+
+    // 12. Subscribe to Notifications
+    try {
+      let qNotifs;
+      if (currentUserRole === 'admin') {
+        qNotifs = query(collection(db, 'notifications'), where('recipientId', '==', 'admin'));
+      } else if (currentUserRole === 'engineer') {
+        let engineerEmail = 'none';
+        const savedUserJson = localStorage.getItem('royal_logged_in_user');
+        if (savedUserJson) {
+          try {
+            const u = JSON.parse(savedUserJson);
+            if (u && u.email) engineerEmail = u.email;
+          } catch(e) {}
+        }
+        qNotifs = query(collection(db, 'notifications'), where('recipientId', '==', engineerEmail));
+      } else {
+        // Client data isolation - only notifications of recipient client belonging to their specific ID
+        qNotifs = query(collection(db, 'notifications'), where('recipientId', '==', 'client'), where('clientId', '==', currentUserId));
+      }
+
+      const unsub = onSnapshot(qNotifs, (snapshot) => {
+        const list: TicketNotification[] = [];
+        snapshot.forEach(docSnap => {
+          list.push(docSnap.data() as TicketNotification);
+        });
+        // Sort descending
+        list.sort((a, b) => b.createdAt - a.createdAt);
+        setNotifications(list);
+      }, (error) => {
+        console.warn("Notifications isolated read error/blocked:", error.message);
+      });
+      unsubscribes.push(unsub);
+    } catch (e) {
+      console.error("Error setting up isolated Notifications subscription:", e);
+    }
+
+    return () => {
+      console.log("[FirestoreSecurity] Cleaning up isolated subscriptions...");
+      unsubscribes.forEach(unsub => unsub());
+    };
+  }, [isFirebaseConnected, currentUserRole, currentUserId, isAuthLoading]);
 
   /**
    * Save and activate Firebase configurations
@@ -982,7 +1210,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       ticketId: undefined,
       createdAt: Date.now(),
       assignedEngineerId: null,
-      assignedEngineerName: null
+      assignedEngineerName: null,
+      clientId: currentUserId || localStorage.getItem('royal_client_uid') || undefined
     };
 
     if (isFirebaseConnected) {
@@ -1024,11 +1253,22 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     if (status === 'Approved') {
-      const req = designRequests.find(r => r.id === id);
+      let req = designRequests.find(r => r.id === id);
+      if (!req && isFirebaseConnected) {
+        try {
+          const db = getDb();
+          const docSnap = await getDoc(doc(db, 'designRequests', id));
+          if (docSnap.exists()) {
+            req = docSnap.data() as DesignRequest;
+          }
+        } catch (err) {
+          console.error("Direct fetch of designRequest failed during approval:", err);
+        }
+      }
       if (req) {
-        const engId = additionalFields?.assignedEngineerId || req.assignedEngineerId;
-        const engName = additionalFields?.assignedEngineerName || req.assignedEngineerName;
-        const engAt = additionalFields?.assignedAt || req.assignedAt;
+        const engId = additionalFields?.assignedEngineerId || req.assignedEngineerId || undefined;
+        const engName = additionalFields?.assignedEngineerName || req.assignedEngineerName || undefined;
+        const engAt = additionalFields?.assignedAt || req.assignedAt || undefined;
 
         await handleAutoCreateTicketOnApproval(
           id,
@@ -1040,7 +1280,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
           req.requestNumber || req.id,
           engId,
           engName,
-          engAt
+          engAt,
+          req.clientId
         );
       }
     }
@@ -1194,7 +1435,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       ticketId: undefined,
       createdAt: Date.now(),
       assignedEngineerId: null,
-      assignedEngineerName: null
+      assignedEngineerName: null,
+      clientId: currentUserId || localStorage.getItem('royal_client_uid') || undefined
     };
 
     if (isFirebaseConnected) {
@@ -1234,11 +1476,22 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     if (status === 'Approved') {
-      const sub = bedroomSubmissions.find(s => s.id === id);
+      let sub = bedroomSubmissions.find(s => s.id === id);
+      if (!sub && isFirebaseConnected) {
+        try {
+          const db = getDb();
+          const docSnap = await getDoc(doc(db, 'bedroomSubmissions', id));
+          if (docSnap.exists()) {
+            sub = docSnap.data() as BedroomSubmission;
+          }
+        } catch (err) {
+          console.error("Direct fetch of bedroomSubmission failed during approval:", err);
+        }
+      }
       if (sub) {
-        const engId = additionalFields?.assignedEngineerId || sub.assignedEngineerId;
-        const engName = additionalFields?.assignedEngineerName || sub.assignedEngineerName;
-        const engAt = additionalFields?.assignedAt || sub.assignedAt;
+        const engId = additionalFields?.assignedEngineerId || sub.assignedEngineerId || undefined;
+        const engName = additionalFields?.assignedEngineerName || sub.assignedEngineerName || undefined;
+        const engAt = additionalFields?.assignedAt || sub.assignedAt || undefined;
 
         await handleAutoCreateTicketOnApproval(
           id,
@@ -1250,7 +1503,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
           sub.requestNumber || sub.id,
           engId,
           engName,
-          engAt
+          engAt,
+          sub.clientId
         );
       }
     }
@@ -1308,24 +1562,102 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
   /**
    * Project Ticket System: Add a new engineer (Admin)
    */
-  const addEngineer = async (engineer: Omit<Engineer, 'id' | 'createdAt'>) => {
-    const newId = `eng_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
-    const newEng: Engineer = {
-      active: true,
-      role: 'engineer',
-      ...engineer,
-      id: newId,
-      createdAt: Date.now()
-    };
+  const addEngineer = async (engineer: Omit<Engineer, 'id' | 'createdAt'>, password?: string) => {
+    let newId = `eng_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
+
+    console.log(`[addEngineer] Initiating engineer creation. Provided email: ${engineer.email}`);
+
+    if (currentUserRole !== 'admin') {
+      console.error("[Security] Unauthorized attempt to add engineer. Role is:", currentUserRole);
+      throw new Error("عذراً، صلاحية مدير النظام مطلوبة لإجراء هذه العملية.");
+    }
 
     if (isFirebaseConnected) {
       try {
-        const db = getDb();
-        await setDoc(doc(db, 'engineers', newId), newEng);
-      } catch (error) {
-        handleFirestoreError(error, OperationType.CREATE, `engineers/${newId}`);
+        const config = getActiveConfig();
+        const { getApps, initializeApp, deleteApp } = await import('firebase/app');
+        const { getAuth, createUserWithEmailAndPassword, signOut } = await import('firebase/auth');
+
+        let secondaryApp;
+        const apps = getApps();
+        const existingApp = apps.find(app => app.name === 'SecondaryRegister');
+        if (existingApp) {
+          secondaryApp = existingApp;
+        } else {
+          secondaryApp = initializeApp(config, 'SecondaryRegister');
+        }
+
+        const secondaryAuth = getAuth(secondaryApp);
+        
+        console.log(`[addEngineer] Calling createUserWithEmailAndPassword on secondary Auth... Email: ${engineer.email.trim()}`);
+        
+        // Attempt creating the user in Firebase Authentication
+        const userCredential = await createUserWithEmailAndPassword(
+          secondaryAuth,
+          engineer.email.trim(),
+          password || 'RoyalGroup@2026'
+        );
+        
+        newId = userCredential.user.uid;
+        console.log(`[addEngineer] Auth creation result: SUCCESS.`);
+        console.log(`- generated uid: ${newId}`);
+        console.log(`- email: ${userCredential.user.email}`);
+        console.log(`- userCredential:`, userCredential);
+
+        // Clean up secondary session immediately
+        await signOut(secondaryAuth);
+        try {
+          await deleteApp(secondaryApp);
+        } catch (delErr) {
+          console.warn("Could not delete secondary app:", delErr);
+        }
+
+        // Define createEngineer() to handle Firestore writes to single source of truth 'users' collection
+        const createEngineer = async (engineerId: string, email: string) => {
+          console.log(`[createEngineer] Saving engineer document to Firestore...`);
+          console.log(`- engineerId: ${engineerId}`);
+          console.log(`- email: ${email}`);
+
+          const db = getDb();
+          const newEng: Engineer = {
+            active: true,
+            status: 'active',
+            role: 'engineer',
+            ...engineer,
+            id: engineerId,
+            createdAt: Date.now()
+          };
+
+          console.log(`[createEngineer] Writing to 'users' collection with ID: ${engineerId}`);
+          await setDoc(doc(db, 'users', engineerId), newEng);
+          console.log(`- Firestore write result ('users'): SUCCESS`);
+        };
+
+        // Call the nested createEngineer function to write to Firestore
+        await createEngineer(newId, engineer.email.trim().toLowerCase());
+
+      } catch (error: any) {
+        console.error("[addEngineer] Failed to create engineer auth/firestore account:", error);
+        let errorMsg = error?.message || 'حدث خطأ أثناء إنشاء حساب المهندس.';
+        if (error?.code === 'auth/email-already-in-use') {
+          errorMsg = 'هذا البريد الإلكتروني مستخدم بالفعل في النظام.';
+        } else if (error?.code === 'auth/weak-password') {
+          errorMsg = 'كلمة المرور ضعيفة للغاية. يرجى اختيار كلمة مرور أقوى.';
+        }
+        throw new Error(errorMsg);
       }
     } else {
+      const newEng: Engineer = {
+        active: true,
+        status: 'active',
+        role: 'engineer',
+        ...engineer,
+        id: newId,
+        createdAt: Date.now()
+      };
+      console.log(`[addEngineer] Saved new engineer locally (No Firebase connection).`);
+      console.log(`- generated uid / engineerId: ${newId}`);
+      console.log(`- email: ${engineer.email}`);
       setEngineers(prev => [newEng, ...prev]);
     }
   };
@@ -1334,15 +1666,49 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
    * Project Ticket System: Update an engineer (Admin)
    */
   const updateEngineer = async (id: string, updates: Partial<Engineer>) => {
+    console.log("NEW UPDATE ENGINEER CODE RUNNING");
+    console.log(`[updateEngineer] Attempting to update engineer in 'users' collection. Target ID: ${id}, Updates:`, updates);
+
+    if (currentUserRole !== 'admin') {
+      console.error("[Security] Unauthorized attempt to update engineer. Role is:", currentUserRole);
+      throw new Error("عذراً، صلاحية مدير النظام مطلوبة لإجراء هذه العملية.");
+    }
+
     if (isFirebaseConnected) {
       try {
         const db = getDb();
-        await updateDoc(doc(db, 'engineers', id), updates);
+        const userRef = doc(db, 'users', id);
+        const userSnap = await getDoc(userRef);
+
+        console.log(`[updateEngineer] Checking existence in 'users' collection. ID: ${id}, Exists: ${userSnap.exists()}`);
+
+        if (userSnap.exists()) {
+          console.log(`[updateEngineer] Document exists. Performing update for ID: ${id}`);
+          
+          // Map active to status if needed
+          const mappedUpdates = { ...updates };
+          if (updates.active !== undefined) {
+            mappedUpdates.status = updates.active ? 'active' : 'disabled';
+          }
+          await updateDoc(userRef, mappedUpdates);
+        } else {
+          throw new Error('المهندس المطلوب تعديله غير موجود في قاعدة البيانات.');
+        }
       } catch (error) {
-        handleFirestoreError(error, OperationType.UPDATE, `engineers/${id}`);
+        console.error(`[updateEngineer] Error during save/update for ID: ${id}:`, error);
+        handleFirestoreError(error, OperationType.UPDATE, `users/${id}`);
       }
     } else {
-      setEngineers(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
+      setEngineers(prev => prev.map(e => {
+        if (e.id === id) {
+          const updated = { ...e, ...updates };
+          if (updates.active !== undefined) {
+            updated.status = updates.active ? 'active' : 'disabled';
+          }
+          return updated;
+        }
+        return e;
+      }));
     }
   };
 
@@ -1350,12 +1716,20 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
    * Project Ticket System: Delete an engineer (Admin)
    */
   const deleteEngineer = async (id: string) => {
+    console.log(`[deleteEngineer] Attempting to delete engineer. Target ID: ${id}`);
+
+    if (currentUserRole !== 'admin') {
+      console.error("[Security] Unauthorized attempt to delete engineer. Role is:", currentUserRole);
+      throw new Error("عذراً، صلاحية مدير النظام مطلوبة لإجراء هذه العملية.");
+    }
+
     if (isFirebaseConnected) {
       try {
         const db = getDb();
-        await deleteDoc(doc(db, 'engineers', id));
+        await deleteDoc(doc(db, 'users', id));
+        console.log(`[deleteEngineer] SUCCESSFUL DELETION of users/${id}`);
       } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, `engineers/${id}`);
+        handleFirestoreError(error, OperationType.DELETE, `users/${id}`);
       }
     } else {
       setEngineers(prev => prev.filter(e => e.id !== id));
@@ -1375,7 +1749,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     trackingId: string,
     assignedEngineerId?: string,
     assignedEngineerName?: string,
-    assignedAt?: number
+    assignedAt?: number,
+    clientId?: string
   ) => {
     // Check if ticket already exists
     const existing = tickets.find(t => t.requestId === requestId || t.sourceId === requestId);
@@ -1397,7 +1772,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       updatedAt: Date.now(),
       assignedEngineerId,
       assignedEngineerName,
-      assignedAt
+      assignedAt,
+      clientId: clientId || undefined
     };
 
     if (assignedEngineerId) {
@@ -1411,6 +1787,18 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     const welcomeContent = assignedEngineerName
       ? `أهلاً بك يا ${clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId} وتم تعيين المهندس المصمم [${assignedEngineerName}] لمتابعة مشروعك والدردشة معك هنا.`
       : `أهلاً بك يا ${clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`;
+
+    const participants = ['admin'];
+    if (clientId) participants.push(`client:${clientId}`);
+    if (assignedEngineerId) participants.push(`engineer:${assignedEngineerId}`);
+
+    console.log("[ChatRoom Creation Audit]", {
+      ticketId,
+      clientId: clientId || 'N/A',
+      assignedEngineerId: assignedEngineerId || 'N/A',
+      chatRoomId: ticketId,
+      participants
+    });
 
     if (isFirebaseConnected) {
       try {
@@ -1436,7 +1824,9 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
           senderName: 'إدارة رويال جروب',
           senderRole: 'admin',
           content: welcomeContent,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          clientId: clientId || undefined,
+          assignedEngineerId: assignedEngineerId || null
         };
         await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
       } catch (error) {
@@ -1456,7 +1846,9 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
         senderName: 'إدارة رويال جروب',
         senderRole: 'admin',
         content: welcomeContent,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        clientId: clientId || undefined,
+        assignedEngineerId: assignedEngineerId || null
       };
       setMessages(prev => [...prev, systemMsg]);
     }
@@ -1469,7 +1861,10 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
     const q = queryStr.trim().toUpperCase();
     if (!q) return null;
 
-    // Search existing tickets first
+    const db = getDb();
+    const currentClientId = currentUserId || localStorage.getItem('royal_client_uid') || undefined;
+
+    // 1. Search existing tickets first (Local state)
     let existingTicket = tickets.find(t => 
       t.id.toUpperCase() === q || 
       t.clientPhone === queryStr || 
@@ -1477,7 +1872,51 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       (t.requestId && t.requestId.toUpperCase() === q)
     );
 
+    // 2. Search existing tickets directly in Firestore if not found (because local state is isolated)
+    if (!existingTicket && isFirebaseConnected) {
+      try {
+        const tDoc = await getDoc(doc(db, 'tickets', q));
+        if (tDoc.exists()) {
+          existingTicket = tDoc.data() as Ticket;
+        } else {
+          const snapPhone = await getDocs(query(collection(db, 'tickets'), where('clientPhone', '==', queryStr)));
+          if (!snapPhone.empty) {
+            existingTicket = snapPhone.docs[0].data() as Ticket;
+          } else {
+            const snapTracking = await getDocs(query(collection(db, 'tickets'), where('trackingId', '==', q)));
+            if (!snapTracking.empty) {
+              existingTicket = snapTracking.docs[0].data() as Ticket;
+            } else {
+              const snapRequest = await getDocs(query(collection(db, 'tickets'), where('requestId', '==', q)));
+              if (!snapRequest.empty) {
+                existingTicket = snapRequest.docs[0].data() as Ticket;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[findOrCreateTicketByTrackingOrPhone] Direct ticket lookup failed:", err);
+      }
+    }
+
+    // Link/Associate the found ticket and its messages with the current client ID!
     if (existingTicket) {
+      if (isFirebaseConnected && currentClientId && existingTicket.clientId !== currentClientId) {
+        try {
+          console.log(`[findOrCreateTicketByTrackingOrPhone] Linking existing ticket ${existingTicket.id} to clientId: ${currentClientId}`);
+          await updateDoc(doc(db, 'tickets', existingTicket.id), { clientId: currentClientId });
+          existingTicket.clientId = currentClientId;
+
+          // Also link all existing messages for this ticket!
+          const msgsSnap = await getDocs(query(collection(db, 'messages'), where('ticketId', '==', existingTicket.id)));
+          for (const msgDoc of msgsSnap.docs) {
+            await updateDoc(doc(db, 'messages', msgDoc.id), { clientId: currentClientId });
+          }
+        } catch (err) {
+          console.error("[findOrCreateTicketByTrackingOrPhone] Error linking ticket/messages:", err);
+        }
+      }
+
       const req = designRequests.find(r => r.id === existingTicket.requestId || r.requestNumber === existingTicket.trackingId);
       const sub = bedroomSubmissions.find(s => s.id === existingTicket.requestId || s.requestNumber === existingTicket.trackingId);
       if ((req && req.status === 'pending') || (sub && sub.status === 'pending')) {
@@ -1486,24 +1925,93 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       return existingTicket;
     }
 
-    // If no ticket exists but we have an approved request, we find the ticket for it
-    const req = designRequests.find(r => 
+    // 3. Search approved Design Requests (Local + Firestore direct)
+    let req = designRequests.find(r => 
       (r.requestNumber && r.requestNumber.toUpperCase() === q) || 
       r.id.toUpperCase() === q || 
       r.phone === queryStr
     );
+
+    if (!req && isFirebaseConnected) {
+      try {
+        const snapDr1 = await getDocs(query(collection(db, 'designRequests'), where('requestNumber', '==', q)));
+        const snapDr2 = await getDocs(query(collection(db, 'designRequests'), where('phone', '==', queryStr)));
+        let foundDr = snapDr1.docs[0]?.data() as DesignRequest || snapDr2.docs[0]?.data() as DesignRequest;
+        if (!foundDr && q.length > 5) {
+          const drDoc = await getDoc(doc(db, 'designRequests', q));
+          if (drDoc.exists()) foundDr = drDoc.data() as DesignRequest;
+        }
+
+        if (foundDr) {
+          req = foundDr;
+          if (currentClientId && foundDr.clientId !== currentClientId) {
+            console.log(`[findOrCreateTicketByTrackingOrPhone] Linking designRequest ${foundDr.id} to clientId: ${currentClientId}`);
+            await updateDoc(doc(db, 'designRequests', foundDr.id), { clientId: currentClientId });
+          }
+        }
+      } catch (err) {
+        console.error("[findOrCreateTicketByTrackingOrPhone] Direct designRequest lookup failed:", err);
+      }
+    }
+
     if (req && req.status !== 'pending') {
-      const t = tickets.find(x => x.requestId === req.id || x.sourceId === req.id);
+      let t = tickets.find(x => x.requestId === req.id || x.sourceId === req.id);
+      if (!t && isFirebaseConnected) {
+        try {
+          const snapT = await getDocs(query(collection(db, 'tickets'), where('requestId', '==', req.id)));
+          if (!snapT.empty) {
+            t = snapT.docs[0].data() as Ticket;
+            if (currentClientId && t.clientId !== currentClientId) {
+              await updateDoc(doc(db, 'tickets', t.id), { clientId: currentClientId });
+            }
+          }
+        } catch (err) {}
+      }
       if (t) return t;
     }
 
-    const sub = bedroomSubmissions.find(s => 
+    // 4. Search approved Bedroom Submissions (Local + Firestore direct)
+    let sub = bedroomSubmissions.find(s => 
       (s.requestNumber && s.requestNumber.toUpperCase() === q) || 
       s.id.toUpperCase() === q || 
       s.clientPhone === queryStr
     );
+
+    if (!sub && isFirebaseConnected) {
+      try {
+        const snapBs1 = await getDocs(query(collection(db, 'bedroomSubmissions'), where('requestNumber', '==', q)));
+        const snapBs2 = await getDocs(query(collection(db, 'bedroomSubmissions'), where('clientPhone', '==', queryStr)));
+        let foundBs = snapBs1.docs[0]?.data() as BedroomSubmission || snapBs2.docs[0]?.data() as BedroomSubmission;
+        if (!foundBs && q.length > 5) {
+          const bsDoc = await getDoc(doc(db, 'bedroomSubmissions', q));
+          if (bsDoc.exists()) foundBs = bsDoc.data() as BedroomSubmission;
+        }
+
+        if (foundBs) {
+          sub = foundBs;
+          if (currentClientId && foundBs.clientId !== currentClientId) {
+            console.log(`[findOrCreateTicketByTrackingOrPhone] Linking bedroomSubmission ${foundBs.id} to clientId: ${currentClientId}`);
+            await updateDoc(doc(db, 'bedroomSubmissions', foundBs.id), { clientId: currentClientId });
+          }
+        }
+      } catch (err) {
+        console.error("[findOrCreateTicketByTrackingOrPhone] Direct bedroomSubmission lookup failed:", err);
+      }
+    }
+
     if (sub && sub.status !== 'pending') {
-      const t = tickets.find(x => x.requestId === sub.id || x.sourceId === sub.id);
+      let t = tickets.find(x => x.requestId === sub.id || x.sourceId === sub.id);
+      if (!t && isFirebaseConnected) {
+        try {
+          const snapT = await getDocs(query(collection(db, 'tickets'), where('requestId', '==', sub.id)));
+          if (!snapT.empty) {
+            t = snapT.docs[0].data() as Ticket;
+            if (currentClientId && t.clientId !== currentClientId) {
+              await updateDoc(doc(db, 'tickets', t.id), { clientId: currentClientId });
+            }
+          }
+        } catch (err) {}
+      }
       if (t) return t;
     }
 
@@ -1529,6 +2037,14 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
 
+    let finalClientId = (ticket as any).clientId || currentUserId || localStorage.getItem('royal_client_uid') || undefined;
+    if (ticket.requestId) {
+      const assocReq = designRequests.find(r => r.id === ticket.requestId) || bedroomSubmissions.find(s => s.id === ticket.requestId);
+      if (assocReq && assocReq.clientId) {
+        finalClientId = assocReq.clientId;
+      }
+    }
+
     const newTicket: Ticket = {
       ...ticket,
       id: ticketId,
@@ -1537,7 +2053,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       status: 'open',
       attachments,
       createdAt: Date.now(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      clientId: finalClientId
     };
 
     if (isFirebaseConnected) {
@@ -1553,7 +2070,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
           senderName: 'إدارة رويال جروب',
           senderRole: 'admin',
           content: `أهلاً بك يا ${ticket.clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          clientId: finalClientId
         };
         await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
       } catch (error) {
@@ -1568,7 +2086,8 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
         senderName: 'إدارة رويال جروب',
         senderRole: 'admin',
         content: `أهلاً بك يا ${ticket.clientName} في نظام الدعم الفني والمتابعة لـ Royal Group. تم إنشاء تذكرتك بنجاح برقم ${ticketId}. سيقوم مهندسو التصميم لدينا بالرد عليك ومتابعة طلبك هنا.`,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        clientId: finalClientId
       };
       setMessages(prev => [...prev, systemMsg]);
     }
@@ -1597,17 +2116,35 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
    */
   const updateTicketStatus = async (id: string, status: TicketStatus) => {
     const updates = { status, updatedAt: Date.now() };
+    const ticketObj = tickets.find(t => t.id === id);
+    let finalClientId = ticketObj?.clientId;
+    let finalAssignedEngineerId = ticketObj?.assignedEngineerId;
+
+    if (!ticketObj && isFirebaseConnected) {
+      try {
+        const db = getDb();
+        const tSnap = await getDoc(doc(db, 'tickets', id));
+        if (tSnap.exists()) {
+          const tData = tSnap.data() as Ticket;
+          finalClientId = tData.clientId;
+          finalAssignedEngineerId = tData.assignedEngineerId;
+        }
+      } catch (err) {
+        console.error("Failed to fetch ticket for updateTicketStatus:", err);
+      }
+    }
+
     if (isFirebaseConnected) {
       try {
         const db = getDb();
         await updateDoc(doc(db, 'tickets', id), updates);
-
+ 
         // Send a system message indicating status change
         let statusAr = 'مفتوحة';
         if (status === 'in_progress') statusAr = 'قيد العمل والتنفيذ';
         if (status === 'under_review') statusAr = 'قيد المراجعة الفنية والتدقيق';
         if (status === 'closed') statusAr = 'مغلقة / تم حلها والانتهاء منها';
-
+ 
         const systemMsg: Message = {
           id: `msg_status_${Date.now()}`,
           ticketId: id,
@@ -1615,7 +2152,9 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
           senderName: 'نظام رويال جروب',
           senderRole: 'admin',
           content: `تنبيه النظام: تم تعديل حالة التذكرة لتصبح [${statusAr}]`,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          clientId: finalClientId || undefined,
+          assignedEngineerId: finalAssignedEngineerId || null
         };
         await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
       } catch (error) {
@@ -1634,7 +2173,9 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
         senderName: 'نظام رويال جروب',
         senderRole: 'admin',
         content: `تنبيه النظام: تم تعديل حالة التذكرة لتصبح [${statusAr}]`,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        clientId: finalClientId || undefined,
+        assignedEngineerId: finalAssignedEngineerId || null
       };
       setMessages(prev => [...prev, systemMsg]);
     }
@@ -1650,12 +2191,26 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       status: 'in_progress' as TicketStatus,
       updatedAt: Date.now()
     };
+    const ticketObj = tickets.find(t => t.id === id);
+    let finalClientId = ticketObj?.clientId;
+
+    if (!ticketObj && isFirebaseConnected) {
+      try {
+        const db = getDb();
+        const tSnap = await getDoc(doc(db, 'tickets', id));
+        if (tSnap.exists()) {
+          finalClientId = (tSnap.data() as Ticket).clientId;
+        }
+      } catch (err) {
+        console.error("Failed to fetch ticket for assignTicket:", err);
+      }
+    }
 
     if (isFirebaseConnected) {
       try {
         const db = getDb();
         await updateDoc(doc(db, 'tickets', id), updates);
-
+ 
         // Add system log message
         const systemMsg: Message = {
           id: `msg_assign_${Date.now()}`,
@@ -1664,10 +2219,12 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
           senderName: 'نظام رويال جروب',
           senderRole: 'admin',
           content: `تنبيه النظام: تم تعيين التذكرة للمهندس المصمم: [${engineerName}] ومباشرة العمل والمتابعة الفنية.`,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          clientId: finalClientId || undefined,
+          assignedEngineerId: engineerId || null
         };
         await setDoc(doc(db, 'messages', systemMsg.id), systemMsg);
-
+ 
         // Notify the engineer
         const engObj = engineers.find(e => e.id === engineerId);
         if (engObj) {
@@ -1691,7 +2248,9 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
         senderName: 'نظام رويال جروب',
         senderRole: 'admin',
         content: `تنبيه النظام: تم تعيين التذكرة للمهندس المصمم: [${engineerName}] ومباشرة العمل والمتابعة الفنية.`,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        clientId: finalClientId || undefined,
+        assignedEngineerId: engineerId || null
       };
       setMessages(prev => [...prev, systemMsg]);
     }
@@ -1720,11 +2279,15 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
 
+    const ticketObj = tickets.find(t => t.id === msg.ticketId);
+
     const newMsg: Message = {
       ...msg,
       id: newId,
       attachments: attachmentsList.length > 0 ? attachmentsList : undefined,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      clientId: ticketObj?.clientId || undefined,
+      assignedEngineerId: ticketObj?.assignedEngineerId || null
     };
 
     if (isFirebaseConnected) {
@@ -1805,11 +2368,14 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
    */
   const addNotification = async (notification: Omit<TicketNotification, 'id' | 'createdAt' | 'read'>) => {
     const newId = `notif_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
+    const associatedTicket = tickets.find(t => t.id === notification.ticketId);
     const newNotif: TicketNotification = {
       ...notification,
       id: newId,
       read: false,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      clientId: associatedTicket?.clientId || undefined,
+      assignedEngineerId: associatedTicket?.assignedEngineerId || null
     };
 
     if (isFirebaseConnected) {
@@ -1883,7 +2449,7 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       tickets,
       messages,
       notifications,
-      loading,
+      loading: loading || isAuthLoading,
       saveFirebaseConfig,
       addProject,
       updateProject,
@@ -1912,7 +2478,11 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
       addNotification,
       markNotificationAsRead,
       findOrCreateTicketByTrackingOrPhone,
-      deleteTicket
+      deleteTicket,
+      refreshUserSession,
+      currentUserRole,
+      currentUserId,
+      logout
     }}>
       {children}
     </FirebaseStateContext.Provider>
