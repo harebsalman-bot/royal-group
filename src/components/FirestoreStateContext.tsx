@@ -413,10 +413,12 @@ export const FirebaseStateProvider: React.FC<{ children: React.ReactNode }> = ({
             resolvedUserId = cid;
           }
 
-          setCurrentUserRole(resolvedRole);
-          setCurrentUserId(resolvedUserId);
-          setIsAuthLoading(false);
-          console.log(`[Auth] role resolved: ${resolvedRole}`);
+         setCurrentUserRole(resolvedRole);
+setCurrentUserId(resolvedUserId);
+setIsAuthLoading(false);
+
+console.log(`[Auth] role resolved: ${resolvedRole}`);
+console.log("CURRENT USER ID =", resolvedUserId);
         });
       } catch (e) {
         console.error("[AuthListener] Error importing/setting up onAuthStateChanged:", e);
