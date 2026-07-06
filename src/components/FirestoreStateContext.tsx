@@ -1632,7 +1632,11 @@ console.log("[EngineersSubscription] Subscribing to 'engineers' collection where
           };
 
           console.log(`[createEngineer] Writing to 'users' collection with ID: ${engineerId}`);
-          await setDoc(doc(db, 'users', engineerId), newEng);
+          console.log('BEFORE SETDOC');
+
+await setDoc(doc(db, 'users', engineerId), newEng);
+
+console.log('AFTER SETDOC');
           console.log(`- Firestore write result ('users'): SUCCESS`);
         };
 
